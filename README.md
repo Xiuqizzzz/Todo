@@ -4,6 +4,15 @@ A small, static web app for personal tasks: due dates, optional rolling “no de
 
 There is **no build step**. Open `index.html` in a browser or serve the folder with any static host.
 
+## Features (recent)
+
+- **Search** — filter the list by task title or project name (works with All / Active / Done).
+- **Coming up** — summary of open tasks **due or scheduled** for **today** and **tomorrow**.
+- **Multi-line add** — the task field is a short text area: **one line = one task** (same dates & project). Paste a list to create many tasks at once.
+- **Split** — on any task, **Split** opens a dialog to turn one item into several subtasks (copies dates/project; original removed). You can also **split on `;` or `；`** inside the dialog.
+- **Theme** — **Theme** cycles **Auto** (follows system light/dark), **Light**, and **Dark**; choice is saved in `localStorage`.
+- **Dialogs** — edit/merge/PIN dialogs focus the main field when opened.
+
 ## Run locally
 
 From the project root:

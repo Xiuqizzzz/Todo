@@ -18,10 +18,13 @@
         <div class="header-row">
           <div class="header-titles">
             <h1 class="title">Todo</h1>
-            <p class="subtitle">Simple list, dates at a glance</p>
+            <p class="subtitle">Simple list, dates at a glance — stored only in this browser.</p>
           </div>
           <div class="header-account">
             <span id="account-label" class="account-label hidden" aria-live="polite"></span>
+            <button type="button" id="theme-toggle" class="btn ghost small" title="Color theme" aria-label="Color theme">
+              Theme
+            </button>
             <button type="button" id="account-switch" class="btn ghost small">Account</button>
           </div>
         </div>
@@ -29,15 +32,20 @@
 
       <section class="panel add-panel" aria-label="New task">
         <form id="add-form" class="add-form">
-          <input
-            type="text"
-            id="task-title"
-            name="title"
-            placeholder="Task"
-            required
-            autocomplete="off"
-            maxlength="500"
-          />
+          <label class="field block">
+            <span class="field-label">Task</span>
+            <textarea
+              id="task-title"
+              name="title"
+              rows="2"
+              autocomplete="off"
+              maxlength="8000"
+              placeholder="One line = one task. Or paste several lines to add multiple tasks at once (same dates & project below)."
+            ></textarea>
+            <span class="field-hint"
+              >Multiple lines create one task per line; use Split on a task to break one title on ; or ；.</span
+            >
+          </label>
           <div class="add-row">
             <label class="field">
               <span class="field-label">Created</span>
@@ -70,7 +78,18 @@
         </form>
       </section>
 
-      <section class="toolbar" aria-label="Filters and merge">
+      <section class="toolbar toolbar-extended" aria-label="Filters and merge">
+        <label class="search-field">
+          <span class="visually-hidden">Search tasks</span>
+          <input
+            type="search"
+            id="task-search"
+            placeholder="Search title or project…"
+            autocomplete="off"
+            maxlength="200"
+            aria-label="Search tasks by title or project"
+          />
+        </label>
         <div class="filters" role="tablist">
           <button type="button" class="filter active" data-filter="all">All</button>
           <button type="button" class="filter" data-filter="active">Active</button>
@@ -93,10 +112,19 @@
       </section>
 
       <p id="merge-hint" class="merge-hint hidden" role="status"></p>
+      <p id="search-empty" class="merge-hint hidden" role="status">No tasks match your search.</p>
+
+      <section id="upcoming-panel" class="panel upcoming-panel" aria-label="Today and tomorrow" hidden>
+        <h2 class="upcoming-heading">Coming up</h2>
+        <p class="upcoming-intro">Open tasks due or scheduled for today and tomorrow.</p>
+        <div id="upcoming-body" class="upcoming-body"></div>
+      </section>
 
       <ul id="task-list" class="task-list" aria-label="Tasks"></ul>
 
-      <p id="empty-state" class="empty hidden">No tasks yet—add one above.</p>
+      <p id="empty-state" class="empty hidden">
+        No tasks yet—add one above. Data stays on this device until you clear site data.
+      </p>
 
       <section class="panel calendar-panel" aria-label="Calendar">
         <h2 class="calendar-heading">Calendar</h2>
@@ -147,6 +175,29 @@
           <div class="dialog-actions">
             <button type="button" class="btn ghost" id="account-pin-cancel">Back</button>
             <button type="button" class="btn primary" id="account-pin-submit">Unlock</button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog id="split-dialog" class="dialog">
+        <div class="dialog-inner">
+          <h2 class="dialog-title">Split into subtasks</h2>
+          <p class="dialog-desc">
+            One line = one new task. Dates and project are copied from the original; the original task is
+            removed. New tasks are marked open.
+          </p>
+          <label class="field block">
+            <span class="field-label">Lines</span>
+            <textarea id="split-lines" rows="8" maxlength="16000" placeholder="Line 1&#10;Line 2"></textarea>
+          </label>
+          <p class="dialog-actions-inline">
+            <button type="button" id="split-by-delimiters" class="btn ghost small">
+              Split text on ; or ；
+            </button>
+          </p>
+          <div class="dialog-actions">
+            <button type="button" class="btn ghost" id="split-cancel">Cancel</button>
+            <button type="button" class="btn primary" id="split-confirm">Create subtasks</button>
           </div>
         </div>
       </dialog>

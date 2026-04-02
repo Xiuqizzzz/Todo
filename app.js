@@ -1,5 +1,6 @@
 const LEGACY_STORAGE_KEY = "todo-simple-v1";
 const APP_STORAGE_KEY = "todo-app-v2";
+const THEME_PREF_KEY = "todo-theme-pref";
 
 /** @typedef {{ id: string, title: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number }} Task */
 
@@ -145,6 +146,13 @@ function toLocalISODate(d) {
   return `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/** @param {string} iso @param {number} deltaDays */
+function addDaysISO(iso, deltaDays) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + deltaDays);
+  return toLocalISODate(dt);
+}
+
 /** @param {number} y @param {number} m 0-11 */
 function calendarMonthPrefix(y, m) {
   return `${y}-${String(m + 1).padStart(2, "0")}`;
@@ -184,6 +192,14 @@ function effectiveScheduleDate(t) {
   return t.scheduledDate || t.date;
 }
 
+/** Due if set, else schedule — for “today / tomorrow” open-task summary. */
+/** @param {Task} t */
+function openTaskAnchorDate(t) {
+  if (t.done) return null;
+  if (hasHardDueDate(t)) return t.dueDate;
+  return t.scheduledDate || t.date;
+}
+
 function rollFloatingSchedules() {
   const today = todayISODate();
   let changed = false;
@@ -218,6 +234,58 @@ function normalizeCategory(c) {
   return String(c || "")
     .trim()
     .toLowerCase();
+}
+
+/** @param {string} text */
+function parseTaskLines(text) {
+  return String(text)
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function getSearchQuery() {
+  const el = document.getElementById("task-search");
+  return el ? el.value.trim().toLowerCase() : "";
+}
+
+/** @param {Task} t @param {string} q */
+function taskMatchesSearch(t, q) {
+  if (!q) return true;
+  const title = String(t.title).toLowerCase();
+  const cat = String(t.category || "").toLowerCase();
+  return title.includes(q) || cat.includes(q);
+}
+
+function getThemePref() {
+  return localStorage.getItem(THEME_PREF_KEY) || "auto";
+}
+
+function applyThemePref() {
+  const pref = getThemePref();
+  if (pref === "auto") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", pref);
+  }
+}
+
+function updateThemeButtonLabel() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const pref = getThemePref();
+  btn.textContent =
+    pref === "auto" ? "Theme: Auto" : pref === "light" ? "Theme: Light" : "Theme: Dark";
+}
+
+function cycleThemePref() {
+  const order = ["auto", "light", "dark"];
+  const cur = getThemePref();
+  const i = Math.max(0, order.indexOf(cur));
+  const next = order[(i + 1) % order.length];
+  localStorage.setItem(THEME_PREF_KEY, next);
+  applyThemePref();
+  updateThemeButtonLabel();
 }
 
 function syncProjectDatalist() {
@@ -267,7 +335,7 @@ function mergeTasksPayload(selected) {
 
 const els = {
   addForm: /** @type {HTMLFormElement} */ (document.getElementById("add-form")),
-  taskTitle: /** @type {HTMLInputElement} */ (document.getElementById("task-title")),
+  taskTitle: /** @type {HTMLTextAreaElement} */ (document.getElementById("task-title")),
   taskDate: /** @type {HTMLInputElement} */ (document.getElementById("task-date")),
   taskDueDate: /** @type {HTMLInputElement} */ (document.getElementById("task-due-date")),
   taskCategory: /** @type {HTMLInputElement} */ (document.getElementById("task-category")),
@@ -277,6 +345,7 @@ const els = {
   toggleMerge: /** @type {HTMLButtonElement} */ (document.getElementById("toggle-merge")),
   toggleProjectView: /** @type {HTMLButtonElement} */ (document.getElementById("toggle-project-view")),
   mergeHint: /** @type {HTMLParagraphElement} */ (document.getElementById("merge-hint")),
+  searchEmpty: /** @type {HTMLParagraphElement | null} */ (document.getElementById("search-empty")),
   mergeDialog: /** @type {HTMLDialogElement} */ (document.getElementById("merge-dialog")),
   mergeTitle: /** @type {HTMLTextAreaElement} */ (document.getElementById("merge-title")),
   mergeDate: /** @type {HTMLInputElement} */ (document.getElementById("merge-date")),
@@ -313,6 +382,15 @@ const els = {
   accountPinSubmit: /** @type {HTMLButtonElement} */ (document.getElementById("account-pin-submit")),
   accountSwitch: /** @type {HTMLButtonElement} */ (document.getElementById("account-switch")),
   accountLabel: /** @type {HTMLSpanElement} */ (document.getElementById("account-label")),
+  taskSearch: /** @type {HTMLInputElement | null} */ (document.getElementById("task-search")),
+  themeToggle: /** @type {HTMLButtonElement | null} */ (document.getElementById("theme-toggle")),
+  splitDialog: /** @type {HTMLDialogElement} */ (document.getElementById("split-dialog")),
+  splitLines: /** @type {HTMLTextAreaElement} */ (document.getElementById("split-lines")),
+  splitByDelimiters: /** @type {HTMLButtonElement} */ (document.getElementById("split-by-delimiters")),
+  splitCancel: /** @type {HTMLButtonElement} */ (document.getElementById("split-cancel")),
+  splitConfirm: /** @type {HTMLButtonElement} */ (document.getElementById("split-confirm")),
+  upcomingPanel: /** @type {HTMLElement | null} */ (document.getElementById("upcoming-panel")),
+  upcomingBody: /** @type {HTMLDivElement | null} */ (document.getElementById("upcoming-body")),
 };
 
 /** @type {Task[]} */
@@ -326,6 +404,8 @@ let mergeSelection = new Set();
 let pendingMergeTasks = null;
 /** @type {string | null} */
 let editingTaskId = null;
+/** @type {string | null} */
+let pendingSplitTaskId = null;
 
 const _initialCal = new Date();
 let viewCalendarYear = _initialCal.getFullYear();
@@ -392,6 +472,11 @@ function buildAccountGateBody(mode) {
     pin2In.autocomplete = "new-password";
     pin2Lab.appendChild(pin2In);
     body.appendChild(pin2Lab);
+    const pinHint = document.createElement("p");
+    pinHint.className = "dialog-hint";
+    pinHint.textContent =
+      "A PIN only separates profiles on this device; it is not strong protection if someone can use your computer or browser dev tools.";
+    body.appendChild(pinHint);
     const actions = document.createElement("div");
     actions.className = "dialog-actions";
     const backBtn = document.createElement("button");
@@ -430,6 +515,7 @@ function buildAccountGateBody(mode) {
     actions.appendChild(backBtn);
     actions.appendChild(goBtn);
     body.appendChild(actions);
+    queueMicrotask(() => nameIn.focus());
     return;
   }
 
@@ -476,6 +562,7 @@ function selectProfile(profileId) {
     els.accountPinInput.value = "";
     els.accountGate.close();
     els.accountPin.showModal();
+    queueMicrotask(() => els.accountPinInput.focus());
     return;
   }
   loadTasksForActiveProfile();
@@ -594,6 +681,13 @@ function createTaskRow(task) {
   const actions = document.createElement("div");
   actions.className = "task-actions";
   if (!mergeMode) {
+    const splitBtn = document.createElement("button");
+    splitBtn.type = "button";
+    splitBtn.className = "btn small ghost";
+    splitBtn.textContent = "Split";
+    splitBtn.title = "Turn this into several smaller tasks";
+    splitBtn.addEventListener("click", () => openSplitDialog(task));
+    actions.appendChild(splitBtn);
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "btn small ghost";
@@ -608,6 +702,10 @@ function createTaskRow(task) {
   del.addEventListener("click", () => {
     tasks = tasks.filter((t) => t.id !== task.id);
     mergeSelection.delete(task.id);
+    if (pendingSplitTaskId === task.id) {
+      pendingSplitTaskId = null;
+      els.splitDialog.close();
+    }
     if (editingTaskId === task.id) {
       editingTaskId = null;
       els.editDialog.close();
@@ -643,10 +741,59 @@ function setSelectedCountLabel() {
   els.mergeHint.innerHTML = `<strong>${n}</strong> selected—tap <strong>Merge selected</strong> below or keep selecting.`;
 }
 
+function renderUpcoming() {
+  const panel = els.upcomingPanel;
+  const body = els.upcomingBody;
+  if (!panel || !body) return;
+  if (!appState.activeProfileId || !isProfileSessionUnlocked(appState.activeProfileId)) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const t0 = todayISODate();
+  const t1 = addDaysISO(t0, 1);
+  const todayTasks = tasks.filter((x) => !x.done && openTaskAnchorDate(x) === t0);
+  const tomTasks = tasks.filter((x) => !x.done && openTaskAnchorDate(x) === t1);
+  body.innerHTML = "";
+  const makeBlock = (/** @type {string} */ label, /** @type {Task[]} */ arr) => {
+    const div = document.createElement("div");
+    div.className = "upcoming-block";
+    const h = document.createElement("h3");
+    h.className = "upcoming-subtitle";
+    h.textContent = `${label} (${arr.length})`;
+    div.appendChild(h);
+    if (arr.length === 0) {
+      const p = document.createElement("p");
+      p.className = "upcoming-empty";
+      p.textContent = "Nothing scheduled.";
+      div.appendChild(p);
+    } else {
+      const ul = document.createElement("ul");
+      ul.className = "upcoming-list";
+      arr.slice(0, 8).forEach((t) => {
+        const li = document.createElement("li");
+        li.textContent = t.title;
+        ul.appendChild(li);
+      });
+      div.appendChild(ul);
+      if (arr.length > 8) {
+        const more = document.createElement("p");
+        more.className = "upcoming-more";
+        more.textContent = `+${arr.length - 8} more in the list below`;
+        div.appendChild(more);
+      }
+    }
+    return div;
+  };
+  body.appendChild(makeBlock("Today", todayTasks));
+  body.appendChild(makeBlock("Tomorrow", tomTasks));
+}
+
 function render() {
   rollFloatingSchedules();
   syncProjectDatalist();
-  const list = getFilteredTasks();
+  const q = getSearchQuery();
+  const list = getFilteredTasks().filter((t) => taskMatchesSearch(t, q));
   const sorted = sortTasks(list);
   els.taskList.innerHTML = "";
 
@@ -686,8 +833,14 @@ function render() {
   }
 
   const hasAny = tasks.length > 0;
+  const baseList = getFilteredTasks();
+  const searchNoHits = Boolean(q && sorted.length === 0 && baseList.length > 0);
+  if (els.searchEmpty) {
+    els.searchEmpty.classList.toggle("hidden", !searchNoHits);
+  }
   els.emptyState.classList.toggle("hidden", hasAny);
-  els.taskList.classList.toggle("hidden", !hasAny);
+  els.taskList.classList.toggle("hidden", !hasAny || searchNoHits);
+  renderUpcoming();
   renderCalendar();
 }
 
@@ -861,6 +1014,60 @@ function renderMergeBar() {
 }
 
 /** @param {Task} task */
+function openSplitDialog(task) {
+  pendingSplitTaskId = task.id;
+  const chunks = task.title.split(/\s*[;；]\s*/).map((s) => s.trim()).filter(Boolean);
+  els.splitLines.value = chunks.length > 1 ? chunks.join("\n") : task.title;
+  els.splitDialog.showModal();
+  queueMicrotask(() => els.splitLines.focus());
+}
+
+function applySplitFromDialog() {
+  const sid = pendingSplitTaskId;
+  if (!sid) return;
+  const source = tasks.find((t) => t.id === sid);
+  if (!source) {
+    pendingSplitTaskId = null;
+    els.splitDialog.close();
+    return;
+  }
+  const lines = parseTaskLines(els.splitLines.value);
+  if (lines.length < 2) {
+    window.alert("Add at least two non-empty lines to create subtasks.");
+    return;
+  }
+  const creation = source.date;
+  const dueRaw = source.dueDate || "";
+  const sched = source.scheduledDate || source.date;
+  const cat = (source.category || "").trim();
+  const baseTime = Date.now();
+  const newTasks = lines.map((title, i) => ({
+    id: crypto.randomUUID(),
+    title,
+    date: creation,
+    dueDate: dueRaw,
+    scheduledDate: dueRaw || sched,
+    completedDate: "",
+    category: cat,
+    done: false,
+    createdAt: baseTime + i,
+  }));
+  tasks = tasks.filter((t) => t.id !== sid);
+  mergeSelection.delete(sid);
+  if (editingTaskId === sid) {
+    editingTaskId = null;
+    els.editDialog.close();
+  }
+  tasks.push(...newTasks);
+  saveTasks(tasks);
+  pendingSplitTaskId = null;
+  els.splitDialog.close();
+  render();
+  setSelectedCountLabel();
+  renderMergeBar();
+}
+
+/** @param {Task} task */
 function openEditDialog(task) {
   syncProjectDatalist();
   editingTaskId = task.id;
@@ -869,6 +1076,7 @@ function openEditDialog(task) {
   els.editDueDate.value = task.dueDate || "";
   els.editCategory.value = task.category || "";
   els.editDialog.showModal();
+  queueMicrotask(() => els.editTitle.focus());
 }
 
 function openMergeDialogForSelection() {
@@ -882,6 +1090,7 @@ function openMergeDialogForSelection() {
   els.mergeDueDate.value = payload.dueDate || "";
   els.mergeCategory.value = payload.category || "";
   els.mergeDialog.showModal();
+  queueMicrotask(() => els.mergeTitle.focus());
 }
 
 function applyMerge(replacement) {
@@ -956,22 +1165,25 @@ els.mergeConfirm.addEventListener("click", () => {
 
 els.addForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  const title = els.taskTitle.value.trim();
-  if (!title) return;
+  const lines = parseTaskLines(els.taskTitle.value);
+  if (lines.length === 0) return;
   const creation = els.taskDate.value || todayISODate();
   const dueRaw = els.taskDueDate.value.trim();
-  const task = {
-    id: crypto.randomUUID(),
-    title,
-    date: creation,
-    dueDate: dueRaw,
-    scheduledDate: dueRaw || creation,
-    completedDate: "",
-    category: els.taskCategory.value.trim(),
-    done: false,
-    createdAt: Date.now(),
-  };
-  tasks.push(task);
+  const cat = els.taskCategory.value.trim();
+  const baseTime = Date.now();
+  lines.forEach((title, i) => {
+    tasks.push({
+      id: crypto.randomUUID(),
+      title,
+      date: creation,
+      dueDate: dueRaw,
+      scheduledDate: dueRaw || creation,
+      completedDate: "",
+      category: cat,
+      done: false,
+      createdAt: baseTime + i,
+    });
+  });
   saveTasks(tasks);
   els.taskTitle.value = "";
   els.taskCategory.value = "";
@@ -1065,6 +1277,32 @@ els.accountPinCancel.addEventListener("click", () => {
   }
 });
 
+els.themeToggle?.addEventListener("click", () => cycleThemePref());
+
+els.taskSearch?.addEventListener("input", () => {
+  render();
+});
+
+els.splitDialog.addEventListener("close", () => {
+  pendingSplitTaskId = null;
+});
+
+els.splitCancel.addEventListener("click", () => {
+  els.splitDialog.close();
+});
+
+els.splitConfirm.addEventListener("click", () => {
+  applySplitFromDialog();
+});
+
+els.splitByDelimiters.addEventListener("click", () => {
+  const parts = els.splitLines.value
+    .split(/[;；]\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  els.splitLines.value = parts.join("\n");
+});
+
 els.accountPinSubmit.addEventListener("click", async () => {
   const pending = pendingProfileIdForPin;
   if (!pending || !appState.profiles[pending]) {
@@ -1088,6 +1326,9 @@ els.accountPinSubmit.addEventListener("click", async () => {
   bootstrapTaskFormAndRender();
 });
 
+applyThemePref();
+updateThemeButtonLabel();
+
 if (needsAccountGate()) {
   const id = appState.activeProfileId;
   if (id && appState.profiles[id]?.pinHash && !isProfileSessionUnlocked(id)) {
@@ -1096,6 +1337,7 @@ if (needsAccountGate()) {
     els.accountPinFor.textContent = `Enter PIN for “${p.name}”.`;
     els.accountPinInput.value = "";
     els.accountPin.showModal();
+    queueMicrotask(() => els.accountPinInput.focus());
   } else if (Object.keys(appState.profiles).length === 0) {
     buildAccountGateBody("create");
     els.accountGate.showModal();
