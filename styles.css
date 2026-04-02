@@ -813,3 +813,25 @@ textarea:focus,
   border-color: #fecaca;
   background: #fff7f7;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cal-detail-due-list li,
+  :root:not([data-theme="light"]) .task-item.overdue:not(.done) {
+    background: rgb(69 10 10 / 45%);
+    border-color: rgb(248 113 113 / 40%);
+  }
+
+  :root:not([data-theme="light"]) .task-item.overdue:not(.done) .task-meta .due-em {
+    color: var(--danger);
+  }
+}
+
+:root[data-theme="dark"] .cal-detail-due-list li,
+:root[data-theme="dark"] .task-item.overdue:not(.done) {
+  background: rgb(69 10 10 / 45%);
+  border-color: rgb(248 113 113 / 40%);
+}
+
+:root[data-theme="dark"] .task-item.overdue:not(.done) .task-meta .due-em {
+  color: var(--danger);
+}
