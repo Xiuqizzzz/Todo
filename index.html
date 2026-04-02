@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Todo</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1 class="title">Todo</h1>
+        <p class="subtitle">Simple list, dates at a glance</p>
+      </header>
+
+      <section class="panel add-panel" aria-label="New task">
+        <form id="add-form" class="add-form">
+          <input
+            type="text"
+            id="task-title"
+            name="title"
+            placeholder="Task"
+            required
+            autocomplete="off"
+            maxlength="500"
+          />
+          <div class="add-row">
+            <label class="field">
+              <span class="field-label">Created</span>
+              <input type="date" id="task-date" name="date" required />
+            </label>
+            <label class="field">
+              <span class="field-label">Due date (optional)</span>
+              <input type="date" id="task-due-date" name="dueDate" />
+              <span class="field-hint"
+                >Leave empty for no fixed deadline; open tasks roll to today each new day</span
+              >
+            </label>
+            <label class="field grow">
+              <span class="field-label">Project (optional)</span>
+              <input
+                type="text"
+                id="task-category"
+                name="category"
+                list="project-datalist"
+                placeholder="Pick from list or type a new name"
+                autocomplete="off"
+                maxlength="80"
+              />
+              <span class="field-hint"
+                >Suggestions come from existing tasks; use View by project to browse by name</span
+              >
+            </label>
+          </div>
+          <button type="submit" class="btn primary">Add</button>
+        </form>
+      </section>
+
+      <section class="toolbar" aria-label="Filters and merge">
+        <div class="filters" role="tablist">
+          <button type="button" class="filter active" data-filter="all">All</button>
+          <button type="button" class="filter" data-filter="active">Active</button>
+          <button type="button" class="filter" data-filter="done">Done</button>
+        </div>
+        <div class="merge-tools">
+          <button type="button" id="toggle-merge" class="btn ghost" aria-pressed="false">
+            Merge mode
+          </button>
+          <button
+            type="button"
+            id="toggle-project-view"
+            class="btn ghost"
+            aria-pressed="false"
+            title="Group the list under project headings"
+          >
+            View by project
+          </button>
+        </div>
+      </section>
+
+      <p id="merge-hint" class="merge-hint hidden" role="status"></p>
+
+      <ul id="task-list" class="task-list" aria-label="Tasks"></ul>
+
+      <p id="empty-state" class="empty hidden">No tasks yet—add one above.</p>
+
+      <section class="panel calendar-panel" aria-label="Calendar">
+        <h2 class="calendar-heading">Calendar</h2>
+        <p id="calendar-summary" class="calendar-summary"></p>
+        <div class="calendar-nav">
+          <button type="button" id="cal-prev" class="btn cal-nav-btn" aria-label="Previous month">
+            ‹
+          </button>
+          <span id="cal-label" class="cal-label"></span>
+          <button type="button" id="cal-next" class="btn cal-nav-btn" aria-label="Next month">›</button>
+          <button type="button" id="cal-this-month" class="btn ghost small cal-this-month">This month</button>
+        </div>
+        <div class="calendar-weekdays" aria-hidden="true">
+          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+        </div>
+        <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="Month"></div>
+        <div id="calendar-detail" class="calendar-detail">
+          <h3 class="detail-title" id="cal-detail-title">Pick a day</h3>
+          <p class="detail-stat" id="cal-detail-stat"></p>
+          <p class="detail-section-label" id="cal-detail-done-label">Completed that day</p>
+          <ul id="cal-detail-done" class="cal-detail-list"></ul>
+          <p class="detail-section-label" id="cal-detail-due-label">Due or scheduled, still open</p>
+          <ul id="cal-detail-due" class="cal-detail-list cal-detail-due-list"></ul>
+        </div>
+      </section>
+
+      <datalist id="project-datalist"></datalist>
+
+      <dialog id="edit-dialog" class="dialog">
+        <div class="dialog-inner">
+          <h2 class="dialog-title">Edit task</h2>
+          <p class="dialog-desc">Change text, dates, or project. Use the checkbox in the list for done/active.</p>
+          <label class="field block">
+            <span class="field-label">Task</span>
+            <textarea id="edit-title" rows="3" maxlength="2000"></textarea>
+          </label>
+          <label class="field block">
+            <span class="field-label">Created</span>
+            <input type="date" id="edit-date" />
+          </label>
+          <label class="field block">
+            <span class="field-label">Due date (optional)</span>
+            <input type="date" id="edit-due-date" />
+            <span class="field-hint">Empty means no fixed deadline; schedule still rolls forward when open</span>
+          </label>
+          <label class="field block">
+            <span class="field-label">Project (optional)</span>
+            <input
+              type="text"
+              id="edit-category"
+              list="project-datalist"
+              maxlength="80"
+              autocomplete="off"
+              placeholder="Pick existing or type new"
+            />
+          </label>
+          <div class="dialog-actions">
+            <button type="button" class="btn ghost" id="edit-cancel">Cancel</button>
+            <button type="button" class="btn primary" id="edit-save">Save</button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog id="merge-dialog" class="dialog">
+        <div class="dialog-inner">
+          <h2 class="dialog-title">Merge tasks</h2>
+          <p class="dialog-desc">Combine the selected tasks into one. You can adjust title and dates.</p>
+          <label class="field block">
+            <span class="field-label">Merged title</span>
+            <textarea id="merge-title" rows="3" maxlength="2000"></textarea>
+          </label>
+          <label class="field block">
+            <span class="field-label">Created</span>
+            <input type="date" id="merge-date" />
+          </label>
+          <label class="field block">
+            <span class="field-label">Due date (optional)</span>
+            <input type="date" id="merge-due-date" />
+          </label>
+          <label class="field block">
+            <span class="field-label">Project (optional)</span>
+            <input
+              type="text"
+              id="merge-category"
+              list="project-datalist"
+              maxlength="80"
+              autocomplete="off"
+              placeholder="Pick existing or type"
+            />
+          </label>
+          <div class="dialog-actions">
+            <button type="button" class="btn ghost" id="merge-cancel">Cancel</button>
+            <button type="button" class="btn primary" id="merge-confirm">Merge</button>
+          </div>
+        </div>
+      </dialog>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
