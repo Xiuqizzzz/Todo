@@ -1,31 +1,132 @@
-const STORAGE_KEY = "todo-simple-v1";
+const LEGACY_STORAGE_KEY = "todo-simple-v1";
+const APP_STORAGE_KEY = "todo-app-v2";
 
 /** @typedef {{ id: string, title: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number }} Task */
 
-function loadTasks() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) return [];
-    return data
-      .filter(
-        (t) =>
-          t &&
-          typeof t.id === "string" &&
-          typeof t.title === "string" &&
-          typeof t.done === "boolean" &&
-          typeof t.date === "string"
-      )
-      .map(normalizeLoadedTask);
-  } catch {
-    return [];
+/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[] }} Profile */
+/** @typedef {{ v: 1, activeProfileId: string | null, profiles: Record<string, Profile> }} AppState */
+
+/** @param {any[]} raw */
+function hydrateTaskArray(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (t) =>
+        t &&
+        typeof t.id === "string" &&
+        typeof t.title === "string" &&
+        typeof t.done === "boolean" &&
+        typeof t.date === "string"
+    )
+    .map(normalizeLoadedTask);
+}
+
+function loadAppStateFromStorage() {
+  const raw = localStorage.getItem(APP_STORAGE_KEY);
+  if (raw) {
+    try {
+      const s = JSON.parse(raw);
+      if (s && s.v === 1 && s.profiles && typeof s.profiles === "object") {
+        return /** @type {AppState} */ (s);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (legacy) {
+    try {
+      const data = JSON.parse(legacy);
+      if (Array.isArray(data)) {
+        const id = crypto.randomUUID();
+        const migrated = hydrateTaskArray(data);
+        return {
+          v: 1,
+          activeProfileId: id,
+          profiles: {
+            [id]: { id, name: "Default", pinHash: null, tasks: migrated },
+          },
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { v: 1, activeProfileId: null, profiles: {} };
+}
+
+function persistAppState() {
+  localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(appState));
+}
+
+/** @param {string} pin */
+async function hashPin(pin) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(`todo-app-pin:${pin}`));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** @param {string} profileId */
+function sessionUnlockedKey(profileId) {
+  return `todo-unlock:${profileId}`;
+}
+
+/** @param {string} profileId */
+function isProfileSessionUnlocked(profileId) {
+  const p = appState.profiles[profileId];
+  if (!p || !p.pinHash) return true;
+  return sessionStorage.getItem(sessionUnlockedKey(profileId)) === "1";
+}
+
+/** @param {string} profileId */
+function unlockProfileSession(profileId) {
+  sessionStorage.setItem(sessionUnlockedKey(profileId), "1");
+}
+
+/** @param {string} profileId */
+function lockProfileSession(profileId) {
+  sessionStorage.removeItem(sessionUnlockedKey(profileId));
+}
+
+let appState = loadAppStateFromStorage();
+if (!localStorage.getItem(APP_STORAGE_KEY) && Object.keys(appState.profiles).length > 0) {
+  persistAppState();
+  if (localStorage.getItem(LEGACY_STORAGE_KEY)) {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }
 }
 
-/** @param {Task[]} tasks */
-function saveTasks(tasks) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+/** @param {Task[]} taskArray */
+function saveTasks(taskArray) {
+  tasks = taskArray;
+  if (!appState.activeProfileId) return;
+  const p = appState.profiles[appState.activeProfileId];
+  if (p) {
+    p.tasks = taskArray;
+    persistAppState();
+  }
+}
+
+function flushTasksToActiveProfile() {
+  if (!appState.activeProfileId) return;
+  const p = appState.profiles[appState.activeProfileId];
+  if (p) {
+    p.tasks = tasks;
+    persistAppState();
+  }
+}
+
+function loadTasksForActiveProfile() {
+  if (!appState.activeProfileId || !isProfileSessionUnlocked(appState.activeProfileId)) {
+    tasks = [];
+    return;
+  }
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) {
+    tasks = [];
+    return;
+  }
+  tasks = hydrateTaskArray(p.tasks);
 }
 
 function todayISODate() {
@@ -202,10 +303,20 @@ const els = {
   editCategory: /** @type {HTMLInputElement} */ (document.getElementById("edit-category")),
   editCancel: /** @type {HTMLButtonElement} */ (document.getElementById("edit-cancel")),
   editSave: /** @type {HTMLButtonElement} */ (document.getElementById("edit-save")),
+  accountGate: /** @type {HTMLDialogElement} */ (document.getElementById("account-gate")),
+  accountGateTitle: /** @type {HTMLHeadingElement} */ (document.getElementById("account-gate-title")),
+  accountGateBody: /** @type {HTMLDivElement} */ (document.getElementById("account-gate-body")),
+  accountPin: /** @type {HTMLDialogElement} */ (document.getElementById("account-pin")),
+  accountPinFor: /** @type {HTMLParagraphElement} */ (document.getElementById("account-pin-for")),
+  accountPinInput: /** @type {HTMLInputElement} */ (document.getElementById("account-pin-input")),
+  accountPinCancel: /** @type {HTMLButtonElement} */ (document.getElementById("account-pin-cancel")),
+  accountPinSubmit: /** @type {HTMLButtonElement} */ (document.getElementById("account-pin-submit")),
+  accountSwitch: /** @type {HTMLButtonElement} */ (document.getElementById("account-switch")),
+  accountLabel: /** @type {HTMLSpanElement} */ (document.getElementById("account-label")),
 };
 
 /** @type {Task[]} */
-let tasks = loadTasks();
+let tasks = [];
 let filter = "all";
 let mergeMode = false;
 let projectViewMode = false;
@@ -221,6 +332,181 @@ let viewCalendarYear = _initialCal.getFullYear();
 let viewCalendarMonth = _initialCal.getMonth();
 /** @type {string | null} */
 let calendarSelectedIso = todayISODate();
+/** @type {string | null} */
+let pendingProfileIdForPin = null;
+/** @type {string | null} */
+let lastUnlockedProfileId = null;
+
+function updateAccountLabel() {
+  if (!appState.activeProfileId || !isProfileSessionUnlocked(appState.activeProfileId)) {
+    els.accountLabel.classList.add("hidden");
+    els.accountLabel.textContent = "";
+    return;
+  }
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) {
+    els.accountLabel.classList.add("hidden");
+    return;
+  }
+  els.accountLabel.textContent = p.name;
+  els.accountLabel.classList.remove("hidden");
+}
+
+/**
+ * @param {"create" | "pick"} mode
+ */
+function buildAccountGateBody(mode) {
+  const body = els.accountGateBody;
+  body.innerHTML = "";
+  if (mode === "create") {
+    els.accountGateTitle.textContent = "Create profile";
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `<p class="dialog-desc">Each profile has its own tasks on this browser. You can host this app publicly—each visitor still uses their own device storage unless you add a backend.</p>`;
+    body.appendChild(wrap);
+    const nameLab = document.createElement("label");
+    nameLab.className = "field block";
+    nameLab.innerHTML = `<span class="field-label">Display name</span>`;
+    const nameIn = document.createElement("input");
+    nameIn.type = "text";
+    nameIn.id = "account-new-name";
+    nameIn.maxLength = 60;
+    nameIn.autocomplete = "username";
+    nameIn.required = true;
+    nameLab.appendChild(nameIn);
+    body.appendChild(nameLab);
+    const pinLab = document.createElement("label");
+    pinLab.className = "field block";
+    pinLab.innerHTML = `<span class="field-label">PIN (optional)</span>`;
+    const pinIn = document.createElement("input");
+    pinIn.type = "password";
+    pinIn.id = "account-new-pin";
+    pinIn.autocomplete = "new-password";
+    pinLab.appendChild(pinIn);
+    body.appendChild(pinLab);
+    const pin2Lab = document.createElement("label");
+    pin2Lab.className = "field block";
+    pin2Lab.innerHTML = `<span class="field-label">Confirm PIN</span>`;
+    const pin2In = document.createElement("input");
+    pin2In.type = "password";
+    pin2In.id = "account-new-pin2";
+    pin2In.autocomplete = "new-password";
+    pin2Lab.appendChild(pin2In);
+    body.appendChild(pin2Lab);
+    const actions = document.createElement("div");
+    actions.className = "dialog-actions";
+    const backBtn = document.createElement("button");
+    backBtn.type = "button";
+    backBtn.className = "btn ghost";
+    backBtn.textContent = "Back";
+    backBtn.hidden = !Object.keys(appState.profiles).length;
+    backBtn.addEventListener("click", () => {
+      buildAccountGateBody("pick");
+    });
+    const goBtn = document.createElement("button");
+    goBtn.type = "button";
+    goBtn.className = "btn primary";
+    goBtn.textContent = "Create";
+    goBtn.addEventListener("click", async () => {
+      const name = nameIn.value.trim();
+      if (!name) return;
+      const p1 = pinIn.value;
+      const p2 = pin2In.value;
+      if (p1 !== p2) {
+        window.alert("PIN fields do not match.");
+        return;
+      }
+      const id = crypto.randomUUID();
+      const pinHash = p1.trim() ? await hashPin(p1.trim()) : null;
+      appState.profiles[id] = { id, name, pinHash, tasks: [] };
+      appState.activeProfileId = id;
+      unlockProfileSession(id);
+      persistAppState();
+      flushTasksToActiveProfile();
+      loadTasksForActiveProfile();
+      updateAccountLabel();
+      els.accountGate.close();
+      bootstrapTaskFormAndRender();
+    });
+    actions.appendChild(backBtn);
+    actions.appendChild(goBtn);
+    body.appendChild(actions);
+    return;
+  }
+
+  els.accountGateTitle.textContent = "Choose profile";
+  const desc = document.createElement("p");
+  desc.className = "dialog-desc";
+  desc.textContent = "Select who is using the app on this device.";
+  body.appendChild(desc);
+  const list = document.createElement("div");
+  list.className = "account-profile-list";
+  const ids = Object.keys(appState.profiles).sort((a, b) =>
+    appState.profiles[a].name.localeCompare(appState.profiles[b].name, "en")
+  );
+  for (const id of ids) {
+    const p = appState.profiles[id];
+    const btnp = document.createElement("button");
+    btnp.type = "button";
+    btnp.className = "account-profile-btn";
+    btnp.textContent = p.pinHash ? `${p.name} (PIN)` : p.name;
+    btnp.addEventListener("click", () => {
+      selectProfile(id);
+    });
+    list.appendChild(btnp);
+  }
+  body.appendChild(list);
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "btn ghost";
+  addBtn.textContent = "+ New profile";
+  addBtn.addEventListener("click", () => buildAccountGateBody("create"));
+  body.appendChild(addBtn);
+}
+
+/** @param {string} profileId */
+function selectProfile(profileId) {
+  flushTasksToActiveProfile();
+  appState.activeProfileId = profileId;
+  persistAppState();
+  if (!isProfileSessionUnlocked(profileId)) {
+    tasks = [];
+    pendingProfileIdForPin = profileId;
+    const p = appState.profiles[profileId];
+    els.accountPinFor.textContent = `Enter PIN for “${p.name}”.`;
+    els.accountPinInput.value = "";
+    els.accountGate.close();
+    els.accountPin.showModal();
+    return;
+  }
+  loadTasksForActiveProfile();
+  updateAccountLabel();
+  els.accountGate.close();
+  bootstrapTaskFormAndRender();
+}
+
+function needsAccountGate() {
+  if (!appState.activeProfileId) return true;
+  if (!appState.profiles[appState.activeProfileId]) {
+    appState.activeProfileId = null;
+    persistAppState();
+    return true;
+  }
+  return !isProfileSessionUnlocked(appState.activeProfileId);
+}
+
+function openAccountPicker() {
+  flushTasksToActiveProfile();
+  buildAccountGateBody(Object.keys(appState.profiles).length ? "pick" : "create");
+  els.accountGate.showModal();
+}
+
+function bootstrapTaskFormAndRender() {
+  lastUnlockedProfileId = appState.activeProfileId;
+  const initDay = todayISODate();
+  els.taskDate.value = initDay;
+  els.taskDueDate.value = "";
+  render();
+}
 
 function getFilteredTasks() {
   if (filter === "active") return tasks.filter((t) => !t.done);
@@ -750,7 +1036,80 @@ els.calThisMonth.addEventListener("click", () => {
   renderCalendar();
 });
 
-const initDay = todayISODate();
-els.taskDate.value = initDay;
-els.taskDueDate.value = "";
-render();
+els.accountGate.addEventListener("cancel", (e) => {
+  if (needsAccountGate()) e.preventDefault();
+});
+
+els.accountSwitch.addEventListener("click", () => {
+  openAccountPicker();
+});
+
+els.accountPinCancel.addEventListener("click", () => {
+  pendingProfileIdForPin = null;
+  els.accountPin.close();
+  const revert = lastUnlockedProfileId;
+  if (revert && appState.profiles[revert]) {
+    appState.activeProfileId = revert;
+    persistAppState();
+    loadTasksForActiveProfile();
+    updateAccountLabel();
+    bootstrapTaskFormAndRender();
+  } else {
+    appState.activeProfileId = null;
+    tasks = [];
+    persistAppState();
+    updateAccountLabel();
+    if (Object.keys(appState.profiles).length === 0) buildAccountGateBody("create");
+    else buildAccountGateBody("pick");
+    els.accountGate.showModal();
+  }
+});
+
+els.accountPinSubmit.addEventListener("click", async () => {
+  const pending = pendingProfileIdForPin;
+  if (!pending || !appState.profiles[pending]) {
+    els.accountPin.close();
+    return;
+  }
+  const typed = els.accountPinInput.value;
+  const got = await hashPin(typed);
+  const p = appState.profiles[pending];
+  if (got !== p.pinHash) {
+    window.alert("Incorrect PIN.");
+    return;
+  }
+  unlockProfileSession(pending);
+  pendingProfileIdForPin = null;
+  appState.activeProfileId = pending;
+  persistAppState();
+  loadTasksForActiveProfile();
+  updateAccountLabel();
+  els.accountPin.close();
+  bootstrapTaskFormAndRender();
+});
+
+if (needsAccountGate()) {
+  const id = appState.activeProfileId;
+  if (id && appState.profiles[id]?.pinHash && !isProfileSessionUnlocked(id)) {
+    pendingProfileIdForPin = id;
+    const p = appState.profiles[id];
+    els.accountPinFor.textContent = `Enter PIN for “${p.name}”.`;
+    els.accountPinInput.value = "";
+    els.accountPin.showModal();
+  } else if (Object.keys(appState.profiles).length === 0) {
+    buildAccountGateBody("create");
+    els.accountGate.showModal();
+  } else {
+    buildAccountGateBody("pick");
+    els.accountGate.showModal();
+  }
+} else {
+  loadTasksForActiveProfile();
+  lastUnlockedProfileId = appState.activeProfileId;
+  updateAccountLabel();
+  bootstrapTaskFormAndRender();
+}
+
+els.accountPin.addEventListener("cancel", (e) => {
+  e.preventDefault();
+});

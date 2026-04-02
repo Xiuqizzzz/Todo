@@ -15,8 +15,16 @@
   <body>
     <div class="app">
       <header class="header">
-        <h1 class="title">Todo</h1>
-        <p class="subtitle">Simple list, dates at a glance</p>
+        <div class="header-row">
+          <div class="header-titles">
+            <h1 class="title">Todo</h1>
+            <p class="subtitle">Simple list, dates at a glance</p>
+          </div>
+          <div class="header-account">
+            <span id="account-label" class="account-label hidden" aria-live="polite"></span>
+            <button type="button" id="account-switch" class="btn ghost small">Account</button>
+          </div>
+        </div>
       </header>
 
       <section class="panel add-panel" aria-label="New task">
@@ -116,6 +124,32 @@
       </section>
 
       <datalist id="project-datalist"></datalist>
+
+      <dialog id="account-gate" class="dialog">
+        <div class="dialog-inner">
+          <h2 id="account-gate-title" class="dialog-title">Account</h2>
+          <div id="account-gate-body"></div>
+        </div>
+      </dialog>
+
+      <dialog id="account-pin" class="dialog">
+        <div class="dialog-inner">
+          <h2 class="dialog-title">Unlock profile</h2>
+          <p id="account-pin-for" class="dialog-desc"></p>
+          <label class="field block">
+            <span class="field-label">PIN</span>
+            <input type="password" id="account-pin-input" autocomplete="current-password" />
+          </label>
+          <p class="dialog-hint">
+            Your PIN exists only in this browser (hashed). It is not a cloud login—see README if you
+            host this publicly.
+          </p>
+          <div class="dialog-actions">
+            <button type="button" class="btn ghost" id="account-pin-cancel">Back</button>
+            <button type="button" class="btn primary" id="account-pin-submit">Unlock</button>
+          </div>
+        </div>
+      </dialog>
 
       <dialog id="edit-dialog" class="dialog">
         <div class="dialog-inner">

@@ -37,6 +37,38 @@ body {
   margin-bottom: 1.75rem;
 }
 
+.header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.header-titles {
+  min-width: 0;
+}
+
+.header-account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.account-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-label.hidden {
+  display: none;
+}
+
 .title {
   margin: 0;
   font-size: 1.75rem;
@@ -343,6 +375,36 @@ textarea:focus,
   margin: 0 0 1rem;
   font-size: 0.9rem;
   color: var(--muted);
+}
+
+.dialog-hint {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.account-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+.account-profile-btn {
+  text-align: left;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  color: var(--text);
+}
+
+.account-profile-btn:hover {
+  border-color: var(--accent);
+  background: var(--surface);
 }
 
 .field.block {
