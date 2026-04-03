@@ -4,7 +4,7 @@ const THEME_PREF_KEY = "todo-theme-pref";
 
 /** @typedef {{ id: string, title: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number }} Task */
 
-/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[] }} Profile */
+/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[], projectDeadlines?: Record<string, string> }} Profile */
 /** @typedef {{ v: 1, activeProfileId: string | null, profiles: Record<string, Profile> }} AppState */
 
 /** @param {any[]} raw */
@@ -45,7 +45,7 @@ function loadAppStateFromStorage() {
           v: 1,
           activeProfileId: id,
           profiles: {
-            [id]: { id, name: "Default", pinHash: null, tasks: migrated },
+            [id]: { id, name: "Default", pinHash: null, tasks: migrated, projectDeadlines: {} },
           },
         };
       }
@@ -117,6 +117,53 @@ function flushTasksToActiveProfile() {
   }
 }
 
+/** @param {Profile} p */
+function ensureProfileProjectDeadlines(p) {
+  if (!p.projectDeadlines || typeof p.projectDeadlines !== "object") {
+    p.projectDeadlines = {};
+  }
+  return p.projectDeadlines;
+}
+
+function getActiveProjectDeadlines() {
+  if (!appState.activeProfileId) return {};
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) return {};
+  return ensureProfileProjectDeadlines(p);
+}
+
+/** @param {string} normalizedKey */
+/** @param {string} iso */
+function setProjectDeadlineForKey(normalizedKey, iso) {
+  if (!appState.activeProfileId) return;
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) return;
+  const d = ensureProfileProjectDeadlines(p);
+  const v = normalizeProjectDeadlineIso(iso);
+  if (!v) delete d[normalizedKey];
+  else d[normalizedKey] = v;
+  persistAppState();
+}
+
+/** @param {string} normalizedKey @param {string} displayName */
+function deleteProjectTasksByKey(normalizedKey, displayName) {
+  const n = tasks.filter((t) => normalizeCategory(t.category) === normalizedKey).length;
+  if (
+    !window.confirm(
+      `Delete all ${n} task${n === 1 ? "" : "s"} in “${displayName}” and clear this project’s deadline? This cannot be undone.`
+    )
+  ) {
+    return;
+  }
+  const d = getActiveProjectDeadlines();
+  delete d[normalizedKey];
+  const next = tasks.filter((t) => normalizeCategory(t.category) !== normalizedKey);
+  saveTasks(next);
+  render();
+  setSelectedCountLabel();
+  renderMergeBar();
+}
+
 function loadTasksForActiveProfile() {
   if (!appState.activeProfileId || !isProfileSessionUnlocked(appState.activeProfileId)) {
     tasks = [];
@@ -128,6 +175,7 @@ function loadTasksForActiveProfile() {
     return;
   }
   tasks = hydrateTaskArray(p.tasks);
+  migrateProjectDeadlinesInProfile(p);
 }
 
 function todayISODate() {
@@ -144,6 +192,51 @@ function toLocalISODate(d) {
   const mo = d.getMonth() + 1;
   const day = d.getDate();
   return `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+const PROJECT_DEADLINE_YEAR_MIN = 1970;
+const PROJECT_DEADLINE_YEAR_MAX = 2100;
+
+/**
+ * Normalizes HTML date-control output and stored values. Some UIs emit 2-digit years
+ * (shown as 0020, etc.); map year &lt; 100 to 2000–2099 and require a sane range.
+ * @param {string} raw
+ * @returns {string}
+ */
+function normalizeProjectDeadlineIso(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const m = /^(\d{1,4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (!m) return "";
+  let y = Number(m[1]);
+  let mo = Number(m[2]);
+  let day = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(day)) return "";
+  mo = Math.trunc(mo);
+  day = Math.trunc(day);
+  if (mo < 1 || mo > 12 || day < 1 || day > 31) return "";
+  if (y < 100) y += 2000;
+  if (y < PROJECT_DEADLINE_YEAR_MIN || y > PROJECT_DEADLINE_YEAR_MAX) return "";
+  const dt = new Date(y, mo - 1, day);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== day) return "";
+  return toLocalISODate(dt);
+}
+
+/** @param {Profile} p */
+function migrateProjectDeadlinesInProfile(p) {
+  const d = ensureProfileProjectDeadlines(p);
+  let changed = false;
+  for (const k of Object.keys(d)) {
+    const n = normalizeProjectDeadlineIso(d[k]);
+    if (n && n !== d[k]) {
+      d[k] = n;
+      changed = true;
+    } else if (!n && d[k]) {
+      delete d[k];
+      changed = true;
+    }
+  }
+  if (changed) persistAppState();
 }
 
 /** @param {string} iso @param {number} deltaDays */
@@ -502,7 +595,7 @@ function buildAccountGateBody(mode) {
       }
       const id = crypto.randomUUID();
       const pinHash = p1.trim() ? await hashPin(p1.trim()) : null;
-      appState.profiles[id] = { id, name, pinHash, tasks: [] };
+      appState.profiles[id] = { id, name, pinHash, tasks: [], projectDeadlines: {} };
       appState.activeProfileId = id;
       unlockProfileSession(id);
       persistAppState();
@@ -815,13 +908,67 @@ function render() {
       if (b === "" && a !== "") return -1;
       return groups.get(a).display.localeCompare(groups.get(b).display, "en");
     });
+    const deadlines = getActiveProjectDeadlines();
+    const today = todayISODate();
     for (const key of keys) {
       const g = groups.get(key);
       const head = document.createElement("li");
       head.className = "task-project-heading";
       const inner = document.createElement("div");
       inner.className = "task-project-heading-inner";
-      inner.textContent = `${g.display} (${g.tasks.length})`;
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "task-project-heading-title";
+      titleEl.textContent = `${g.display} (${g.tasks.length})`;
+      inner.appendChild(titleEl);
+
+      if (key) {
+        const deadlineIso = normalizeProjectDeadlineIso(deadlines[key] || "");
+        const tools = document.createElement("div");
+        tools.className = "task-project-heading-tools";
+
+        const dlWrap = document.createElement("label");
+        dlWrap.className = "project-deadline-field";
+        const dlLbl = document.createElement("span");
+        dlLbl.className = "project-deadline-field-label";
+        dlLbl.textContent = "Deadline";
+        const dlInput = document.createElement("input");
+        dlInput.type = "date";
+        dlInput.className = "project-deadline-input";
+        dlInput.min = `${PROJECT_DEADLINE_YEAR_MIN}-01-01`;
+        dlInput.max = `${PROJECT_DEADLINE_YEAR_MAX}-12-31`;
+        dlInput.value = deadlineIso;
+        dlInput.title =
+          "Pick a date (year 1970–2100). After this day, you can remove every task in this project at once.";
+        dlInput.addEventListener("click", (e) => e.stopPropagation());
+        dlInput.addEventListener("change", () => {
+          setProjectDeadlineForKey(key, dlInput.value.trim());
+          render();
+        });
+        dlWrap.appendChild(dlLbl);
+        dlWrap.appendChild(dlInput);
+        tools.appendChild(dlWrap);
+
+        if (deadlineIso && deadlineIso < today) {
+          const exp = document.createElement("div");
+          exp.className = "project-deadline-expired";
+          const msg = document.createElement("span");
+          msg.className = "project-deadline-expired-msg";
+          msg.textContent = "Deadline passed.";
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn danger small project-delete-project-btn";
+          delBtn.textContent = "Delete project tasks…";
+          delBtn.title = "Remove every task with this project name";
+          delBtn.addEventListener("click", () => deleteProjectTasksByKey(key, g.display));
+          exp.appendChild(msg);
+          exp.appendChild(delBtn);
+          tools.appendChild(exp);
+        }
+
+        inner.appendChild(tools);
+      }
+
       head.appendChild(inner);
       els.taskList.appendChild(head);
       for (const task of g.tasks) {
@@ -904,6 +1051,7 @@ function renderCalendar() {
       iter.getFullYear() === viewCalendarYear && iter.getMonth() === viewCalendarMonth;
     const dayNum = iter.getDate();
     const doneHere = tasksCompletedOnDay(iso).length;
+    const openHere = tasksDueNotDoneOnDay(iso).length;
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -911,21 +1059,29 @@ function renderCalendar() {
     if (!inMonth) btn.classList.add("other-month");
     if (iso === today) btn.classList.add("today");
     if (calendarSelectedIso && iso === calendarSelectedIso) btn.classList.add("selected");
+    if (openHere > 0) btn.classList.add("cal-cell-has-open");
     btn.setAttribute("role", "gridcell");
-    btn.setAttribute(
-      "aria-label",
-      `${iso}, ${doneHere ? doneHere + " completed" : "no completions"}`
-    );
+    const ariaBits = [];
+    if (openHere) ariaBits.push(`${openHere} to do`);
+    if (doneHere) ariaBits.push(`${doneHere} completed`);
+    btn.setAttribute("aria-label", `${iso}${ariaBits.length ? ", " + ariaBits.join(", ") : ", nothing scheduled"}`);
 
     const num = document.createElement("span");
     num.className = "cal-cell-day";
     num.textContent = String(dayNum);
     btn.appendChild(num);
 
-    const badge = document.createElement("span");
-    badge.className = "cal-cell-badge";
-    if (doneHere > 0) badge.textContent = String(doneHere);
-    btn.appendChild(badge);
+    const badges = document.createElement("span");
+    badges.className = "cal-cell-badges";
+    const badgeOpen = document.createElement("span");
+    badgeOpen.className = "cal-cell-badge cal-cell-badge-open";
+    if (openHere > 0) badgeOpen.textContent = String(openHere);
+    const badgeDone = document.createElement("span");
+    badgeDone.className = "cal-cell-badge cal-cell-badge-done";
+    if (doneHere > 0) badgeDone.textContent = String(doneHere);
+    badges.appendChild(badgeOpen);
+    badges.appendChild(badgeDone);
+    btn.appendChild(badges);
 
     btn.addEventListener("click", () => {
       if (!inMonth) {

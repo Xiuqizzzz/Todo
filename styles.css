@@ -7,6 +7,7 @@
   --accent: #0d9488;
   --accent-hover: #0f766e;
   --danger: #dc2626;
+  --cal-open: #c2410c;
   --radius: 10px;
   --shadow: 0 1px 3px rgb(28 25 23 / 6%);
   font-family: "DM Sans", system-ui, sans-serif;
@@ -26,6 +27,7 @@
     --accent: #2dd4bf;
     --accent-hover: #5eead4;
     --danger: #f87171;
+    --cal-open: #fb923c;
     --shadow: 0 1px 3px rgb(0 0 0 / 35%);
   }
 }
@@ -39,6 +41,7 @@
   --accent: #2dd4bf;
   --accent-hover: #5eead4;
   --danger: #f87171;
+  --cal-open: #fb923c;
   --shadow: 0 1px 3px rgb(0 0 0 / 35%);
 }
 
@@ -51,6 +54,7 @@
   --accent: #0d9488;
   --accent-hover: #0f766e;
   --danger: #dc2626;
+  --cal-open: #c2410c;
   --shadow: 0 1px 3px rgb(28 25 23 / 6%);
 }
 
@@ -433,6 +437,11 @@ textarea:focus,
 }
 
 .task-project-heading-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--muted);
@@ -440,6 +449,59 @@ textarea:focus,
   letter-spacing: 0.06em;
   padding: 0.35rem 0.15rem;
   border-bottom: 1px solid var(--border);
+}
+
+.task-project-heading-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.task-project-heading-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.project-deadline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.project-deadline-field-label {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.project-deadline-input {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.project-deadline-expired {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.project-deadline-expired-msg {
+  font-size: 0.72rem;
+  color: var(--danger);
 }
 
 .task-item {
@@ -743,21 +805,59 @@ textarea:focus,
   border-color: var(--accent);
 }
 
+.cal-cell-has-open {
+  background: color-mix(in srgb, var(--cal-open) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--cal-open) 35%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal-open) 25%, transparent);
+}
+
+.cal-cell-has-open:hover {
+  background: color-mix(in srgb, var(--cal-open) 22%, var(--bg));
+}
+
+.cal-cell-has-open.today {
+  border-color: var(--cal-open);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal-open) 30%, transparent),
+    0 0 0 1px var(--accent);
+}
+
+.cal-cell-has-open.selected {
+  background: color-mix(in srgb, var(--cal-open) 12%, rgb(13 148 136 / 14%));
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cal-open) 22%, transparent),
+    0 0 0 1px var(--accent);
+}
+
 .cal-cell-day {
   font-size: 0.85rem;
   font-weight: 600;
 }
 
+.cal-cell-badges {
+  margin-top: 0.12rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.18rem;
+  justify-content: center;
+  max-width: 100%;
+}
+
 .cal-cell-badge {
-  margin-top: 0.15rem;
   font-size: 0.65rem;
   font-weight: 600;
   color: #fff;
-  background: var(--accent);
   border-radius: 999px;
   min-width: 1.15rem;
   padding: 0.08rem 0.28rem;
   line-height: 1.2;
+}
+
+.cal-cell-badge-open {
+  background: var(--cal-open);
+}
+
+.cal-cell-badge-done {
+  background: var(--accent);
 }
 
 .cal-cell-badge:empty {
