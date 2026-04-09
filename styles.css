@@ -744,28 +744,6 @@ textarea:focus,
   color: var(--text);
 }
 
-.presets-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.65rem;
-}
-
-.presets-row .field {
-  flex: 1;
-  min-width: 8rem;
-}
-
-.narrow-field select {
-  font: inherit;
-  max-width: 12rem;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text);
-}
-
 .keyboard-hint {
   margin: 0.5rem 0 0;
   font-size: 0.78rem;
@@ -785,20 +763,6 @@ textarea:focus,
 
 .overdue-panel {
   margin-bottom: 1rem;
-}
-
-.task-notes-preview {
-  margin: 0.35rem 0 0;
-  font-size: 0.85rem;
-  color: var(--muted);
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.task-repeat-badge {
-  font-weight: 500;
-  color: var(--accent-hover);
 }
 
 .task-item.task-keyboard-focus {

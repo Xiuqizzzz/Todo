@@ -47,35 +47,6 @@
               >Multiple lines create one task per line; use Split on a task to break one title on ; or ；.</span
             >
           </label>
-          <label class="field block">
-            <span class="field-label">Notes (optional, shared if you add several tasks at once)</span>
-            <textarea
-              id="task-notes"
-              name="notes"
-              rows="2"
-              maxlength="8000"
-              autocomplete="off"
-              placeholder="Extra detail; shown in the list when set"
-            ></textarea>
-          </label>
-          <label class="field block narrow-field">
-            <span class="field-label">Repeat when completed</span>
-            <select id="task-repeat" name="repeat" aria-label="Repeat when completed">
-              <option value="none" selected>No repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </label>
-          <div class="presets-row">
-            <label class="field grow">
-              <span class="field-label">Quick preset</span>
-              <select id="preset-select" aria-label="Apply saved add-form preset">
-                <option value="">— None —</option>
-              </select>
-            </label>
-            <button type="button" id="preset-save" class="btn ghost small">Save preset…</button>
-          </div>
           <div class="add-row">
             <label class="field">
               <span class="field-label">Created</span>
@@ -297,19 +268,6 @@
               autocomplete="off"
               placeholder="Pick existing or type new"
             />
-          </label>
-          <label class="field block">
-            <span class="field-label">Notes (optional)</span>
-            <textarea id="edit-notes" rows="3" maxlength="8000" placeholder="Longer context"></textarea>
-          </label>
-          <label class="field block narrow-field">
-            <span class="field-label">Repeat when completed</span>
-            <select id="edit-repeat" aria-label="Repeat when completed">
-              <option value="none">No repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
           </label>
           <div class="dialog-actions">
             <button type="button" class="btn ghost" id="edit-cancel">Cancel</button>

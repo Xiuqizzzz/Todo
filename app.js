@@ -3,11 +3,9 @@ const APP_STORAGE_KEY = "todo-app-v2";
 const THEME_PREF_KEY = "todo-theme-pref";
 const SORT_PREF_KEY = "todo-sort-mode";
 
-/** @typedef {{ id: string, title: string, notes: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number, repeat: string, manualOrder: number, deletedAt: number | null }} Task */
+/** @typedef {{ id: string, title: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number, manualOrder: number, deletedAt: number | null }} Task */
 
-/** @typedef {{ id: string, name: string, category: string, dueOffsetDays: number | null }} QuickPreset */
-
-/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[], projectDeadlines?: Record<string, string>, quickPresets?: QuickPreset[] }} Profile */
+/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[], projectDeadlines?: Record<string, string> }} Profile */
 /** @typedef {{ v: 1, activeProfileId: string | null, profiles: Record<string, Profile> }} AppState */
 
 /** @param {any[]} raw */
@@ -48,7 +46,7 @@ function loadAppStateFromStorage() {
           v: 1,
           activeProfileId: id,
           profiles: {
-            [id]: { id, name: "Default", pinHash: null, tasks: migrated, projectDeadlines: {}, quickPresets: [] },
+            [id]: { id, name: "Default", pinHash: null, tasks: migrated, projectDeadlines: {} },
           },
         };
       }
@@ -128,64 +126,9 @@ function ensureProfileProjectDeadlines(p) {
   return p.projectDeadlines;
 }
 
-/** @param {Profile} p */
-function ensureQuickPresets(p) {
-  if (!p.quickPresets || !Array.isArray(p.quickPresets)) {
-    p.quickPresets = [];
-  }
-  return p.quickPresets;
-}
-
-/** @param {string} v */
-function normalizeRepeat(v) {
-  if (v === "daily" || v === "weekly" || v === "monthly") return v;
-  return "none";
-}
-
 /** @returns {Task[]} */
 function tasksVisible() {
   return tasks.filter((t) => !t.deletedAt);
-}
-
-/** @param {string} repeat */
-function addRepeatFromIso(iso, repeat) {
-  if (repeat === "daily") return addDaysISO(iso, 1);
-  if (repeat === "weekly") return addDaysISO(iso, 7);
-  if (repeat === "monthly") {
-    const [y, m, d] = iso.split("-").map(Number);
-    const dt = new Date(y, m - 1, d);
-    dt.setMonth(dt.getMonth() + 1);
-    return toLocalISODate(dt);
-  }
-  return iso;
-}
-
-/**
- * @param {Task} t open task about to be marked complete
- * @returns {Task | null}
- */
-function makeRepeatFollowupTask(t) {
-  const rep = normalizeRepeat(t.repeat);
-  if (rep === "none") return null;
-  const anchor = hasHardDueDate(t) ? t.dueDate : t.scheduledDate || t.date;
-  const nextFloating = addRepeatFromIso(anchor, rep);
-  const nextDue = hasHardDueDate(t) ? nextFloating : "";
-  const nextSched = hasHardDueDate(t) ? nextDue : nextFloating;
-  return {
-    id: crypto.randomUUID(),
-    title: t.title,
-    notes: t.notes || "",
-    date: todayISODate(),
-    dueDate: nextDue,
-    scheduledDate: nextSched || todayISODate(),
-    completedDate: "",
-    category: t.category || "",
-    done: false,
-    createdAt: Date.now(),
-    repeat: rep,
-    manualOrder: typeof t.manualOrder === "number" ? t.manualOrder : 0,
-    deletedAt: null,
-  };
 }
 
 function getActiveProjectDeadlines() {
@@ -328,20 +271,23 @@ function normalizeLoadedTask(t) {
   }
   const completedDate =
     typeof t.completedDate === "string" ? t.completedDate : "";
-  const notes = typeof t.notes === "string" ? t.notes : "";
-  const repeat = normalizeRepeat(t.repeat);
   const manualOrder =
     typeof t.manualOrder === "number" && Number.isFinite(t.manualOrder) ? t.manualOrder : 0;
   const deletedAt =
     typeof t.deletedAt === "number" && Number.isFinite(t.deletedAt) ? t.deletedAt : null;
+  const createdAt =
+    typeof t.createdAt === "number" && Number.isFinite(t.createdAt) ? t.createdAt : Date.now();
+  const category = typeof t.category === "string" ? t.category : "";
   return {
-    ...t,
+    id: t.id,
+    title: t.title,
+    done: t.done,
     date,
     dueDate,
     scheduledDate,
     completedDate,
-    notes,
-    repeat,
+    category,
+    createdAt,
     manualOrder,
     deletedAt,
   };
@@ -497,8 +443,7 @@ function taskMatchesSearch(t, q) {
   if (!q) return true;
   const title = String(t.title).toLowerCase();
   const cat = String(t.category || "").toLowerCase();
-  const notes = String(t.notes || "").toLowerCase();
-  return title.includes(q) || cat.includes(q) || notes.includes(q);
+  return title.includes(q) || cat.includes(q);
 }
 
 function getThemePref() {
@@ -614,8 +559,6 @@ const els = {
   editDate: /** @type {HTMLInputElement} */ (document.getElementById("edit-date")),
   editDueDate: /** @type {HTMLInputElement} */ (document.getElementById("edit-due-date")),
   editCategory: /** @type {HTMLInputElement} */ (document.getElementById("edit-category")),
-  editNotes: /** @type {HTMLTextAreaElement} */ (document.getElementById("edit-notes")),
-  editRepeat: /** @type {HTMLSelectElement} */ (document.getElementById("edit-repeat")),
   editCancel: /** @type {HTMLButtonElement} */ (document.getElementById("edit-cancel")),
   editSave: /** @type {HTMLButtonElement} */ (document.getElementById("edit-save")),
   accountGate: /** @type {HTMLDialogElement} */ (document.getElementById("account-gate")),
@@ -645,10 +588,6 @@ const els = {
   sortMode: /** @type {HTMLSelectElement | null} */ (document.getElementById("sort-mode")),
   toggleBulk: /** @type {HTMLButtonElement | null} */ (document.getElementById("toggle-bulk")),
   bulkHint: /** @type {HTMLParagraphElement | null} */ (document.getElementById("bulk-hint")),
-  taskNotes: /** @type {HTMLTextAreaElement | null} */ (document.getElementById("task-notes")),
-  taskRepeat: /** @type {HTMLSelectElement | null} */ (document.getElementById("task-repeat")),
-  presetSelect: /** @type {HTMLSelectElement | null} */ (document.getElementById("preset-select")),
-  presetSave: /** @type {HTMLButtonElement | null} */ (document.getElementById("preset-save")),
 };
 
 /** @type {Task[]} */
@@ -765,7 +704,7 @@ function buildAccountGateBody(mode) {
       }
       const id = crypto.randomUUID();
       const pinHash = p1.trim() ? await hashPin(p1.trim()) : null;
-      appState.profiles[id] = { id, name, pinHash, tasks: [], projectDeadlines: {}, quickPresets: [] };
+      appState.profiles[id] = { id, name, pinHash, tasks: [], projectDeadlines: {} };
       appState.activeProfileId = id;
       unlockProfileSession(id);
       persistAppState();
@@ -857,7 +796,6 @@ function bootstrapTaskFormAndRender() {
   els.taskDueDate.value = "";
   if (els.sortMode) els.sortMode.value = getSortMode();
   keyboardFocusTaskId = null;
-  syncPresetSelect();
   render();
 }
 
@@ -931,15 +869,8 @@ function createTaskRow(task) {
     toggle.checked = task.done;
     toggle.setAttribute("aria-label", "Mark complete");
     toggle.addEventListener("change", () => {
-      if (!task.done && toggle.checked && normalizeRepeat(task.repeat) !== "none") {
-        const follow = makeRepeatFollowupTask(task);
-        task.done = true;
-        task.completedDate = todayISODate();
-        if (follow) tasks.push(follow);
-      } else {
-        task.done = toggle.checked;
-        task.completedDate = toggle.checked ? todayISODate() : "";
-      }
+      task.done = toggle.checked;
+      task.completedDate = toggle.checked ? todayISODate() : "";
       saveTasks(tasks);
       render();
     });
@@ -952,12 +883,6 @@ function createTaskRow(task) {
   title.className = "task-title";
   title.textContent = task.title;
   body.appendChild(title);
-  if (task.notes && task.notes.trim()) {
-    const notesEl = document.createElement("p");
-    notesEl.className = "task-notes-preview";
-    notesEl.textContent = task.notes.trim();
-    body.appendChild(notesEl);
-  }
   const meta = document.createElement("p");
   meta.className = "task-meta";
   const created = document.createElement("span");
@@ -986,14 +911,6 @@ function createTaskRow(task) {
     const cat = document.createElement("span");
     cat.textContent = "Project · " + task.category.trim();
     meta.appendChild(cat);
-  }
-  const rep = normalizeRepeat(task.repeat);
-  if (rep !== "none") {
-    const repEl = document.createElement("span");
-    repEl.className = "task-repeat-badge";
-    repEl.textContent =
-      "Repeats · " + (rep === "daily" ? "daily" : rep === "weekly" ? "weekly" : "monthly");
-    meta.appendChild(repEl);
   }
   body.appendChild(meta);
   li.appendChild(body);
@@ -1237,26 +1154,6 @@ function renderTrash() {
   body.appendChild(list);
 }
 
-function syncPresetSelect() {
-  const sel = els.presetSelect;
-  if (!sel || !appState.activeProfileId) return;
-  const p = appState.profiles[appState.activeProfileId];
-  if (!p) return;
-  const presets = ensureQuickPresets(p);
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">— None —</option>';
-  presets
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, "en"))
-    .forEach((pr) => {
-      const opt = document.createElement("option");
-      opt.value = pr.id;
-      opt.textContent = pr.name;
-      sel.appendChild(opt);
-    });
-  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
-}
-
 function setBulkHint() {
   const el = els.bulkHint;
   if (!el) return;
@@ -1467,15 +1364,8 @@ function initKeyboardNav() {
 
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
-      if (!task.done && normalizeRepeat(task.repeat) !== "none") {
-        const follow = makeRepeatFollowupTask(task);
-        task.done = true;
-        task.completedDate = todayISODate();
-        if (follow) tasks.push(follow);
-      } else {
-        task.done = !task.done;
-        task.completedDate = task.done ? todayISODate() : "";
-      }
+      task.done = !task.done;
+      task.completedDate = task.done ? todayISODate() : "";
       saveTasks(tasks);
       render();
       return;
@@ -1596,7 +1486,6 @@ function render() {
   renderUpcoming();
   renderOverdue();
   renderTrash();
-  syncPresetSelect();
   renderCalendar();
 }
 
@@ -1809,7 +1698,6 @@ function applySplitFromDialog() {
   const newTasks = lines.map((title, i) => ({
     id: crypto.randomUUID(),
     title,
-    notes: source.notes || "",
     date: creation,
     dueDate: dueRaw,
     scheduledDate: dueRaw || sched,
@@ -1817,7 +1705,6 @@ function applySplitFromDialog() {
     category: cat,
     done: false,
     createdAt: baseTime + i,
-    repeat: normalizeRepeat(source.repeat),
     manualOrder: 0,
     deletedAt: null,
   }));
@@ -1844,8 +1731,6 @@ function openEditDialog(task) {
   els.editDate.value = task.date;
   els.editDueDate.value = task.dueDate || "";
   els.editCategory.value = task.category || "";
-  els.editNotes.value = task.notes || "";
-  els.editRepeat.value = normalizeRepeat(task.repeat);
   els.editDialog.showModal();
   queueMicrotask(() => els.editTitle.focus());
 }
@@ -1903,8 +1788,6 @@ els.editSave.addEventListener("click", () => {
   task.dueDate = dueRaw;
   task.scheduledDate = dueRaw || creation;
   task.category = els.editCategory.value.trim();
-  task.notes = els.editNotes.value;
-  task.repeat = normalizeRepeat(els.editRepeat.value);
   saveTasks(tasks);
   editingTaskId = null;
   els.editDialog.close();
@@ -1925,7 +1808,6 @@ els.mergeConfirm.addEventListener("click", () => {
   const replacement = {
     id: crypto.randomUUID(),
     title,
-    notes: pendingMergeTasks.map((t) => (t.notes || "").trim()).filter(Boolean).join("\n---\n"),
     date: els.mergeDate.value || prev.date,
     dueDate: dueVal,
     scheduledDate: dueVal || prev.scheduledDate || todayISODate(),
@@ -1933,7 +1815,6 @@ els.mergeConfirm.addEventListener("click", () => {
     done: prev.done,
     completedDate: prev.completedDate || "",
     createdAt: Date.now(),
-    repeat: "none",
     manualOrder: 0,
     deletedAt: null,
   };
@@ -1947,14 +1828,11 @@ els.addForm.addEventListener("submit", (e) => {
   const creation = els.taskDate.value || todayISODate();
   const dueRaw = els.taskDueDate.value.trim();
   const cat = els.taskCategory.value.trim();
-  const notesVal = (els.taskNotes?.value || "").trim();
-  const repeatVal = normalizeRepeat(els.taskRepeat?.value || "none");
   const baseTime = Date.now();
   lines.forEach((title, i) => {
     tasks.push({
       id: crypto.randomUUID(),
       title,
-      notes: notesVal,
       date: creation,
       dueDate: dueRaw,
       scheduledDate: dueRaw || creation,
@@ -1962,7 +1840,6 @@ els.addForm.addEventListener("submit", (e) => {
       category: cat,
       done: false,
       createdAt: baseTime + i,
-      repeat: repeatVal,
       manualOrder: 0,
       deletedAt: null,
     });
@@ -1970,8 +1847,6 @@ els.addForm.addEventListener("submit", (e) => {
   saveTasks(tasks);
   els.taskTitle.value = "";
   els.taskCategory.value = "";
-  if (els.taskNotes) els.taskNotes.value = "";
-  if (els.taskRepeat) els.taskRepeat.value = "none";
   const t = todayISODate();
   els.taskDate.value = t;
   els.taskDueDate.value = "";
@@ -2060,46 +1935,6 @@ els.sortMode?.addEventListener("change", () => {
   if (v === "manual") normalizeManualOrdersForVisible();
   keyboardFocusTaskId = null;
   render();
-});
-
-els.presetSelect?.addEventListener("change", () => {
-  const id = els.presetSelect?.value;
-  if (!id || !appState.activeProfileId) return;
-  const p = appState.profiles[appState.activeProfileId];
-  if (!p) return;
-  const pr = ensureQuickPresets(p).find((x) => x.id === id);
-  if (!pr) return;
-  if (els.taskCategory) els.taskCategory.value = pr.category || "";
-  if (els.taskDueDate) {
-    if (pr.dueOffsetDays == null) els.taskDueDate.value = "";
-    else els.taskDueDate.value = addDaysISO(todayISODate(), pr.dueOffsetDays);
-  }
-});
-
-els.presetSave?.addEventListener("click", () => {
-  if (!appState.activeProfileId) return;
-  const p = appState.profiles[appState.activeProfileId];
-  if (!p) return;
-  const name = window.prompt("Name for this preset (e.g. Work errands)", "");
-  if (!name || !name.trim()) return;
-  const creation = els.taskDate.value || todayISODate();
-  const dueRaw = els.taskDueDate.value.trim();
-  let dueOffsetDays = null;
-  if (dueRaw) {
-    const t0 = new Date(creation + "T12:00:00");
-    const t1 = new Date(dueRaw + "T12:00:00");
-    dueOffsetDays = Math.round((t1 - t0) / 86400000);
-  }
-  const presetId = crypto.randomUUID();
-  ensureQuickPresets(p).push({
-    id: presetId,
-    name: name.trim(),
-    category: els.taskCategory.value.trim(),
-    dueOffsetDays,
-  });
-  persistAppState();
-  syncPresetSelect();
-  if (els.presetSelect) els.presetSelect.value = presetId;
 });
 
 els.trashEmpty?.addEventListener("click", () => {
