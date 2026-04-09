@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Todo</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0d9488" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -45,6 +47,35 @@
               >Multiple lines create one task per line; use Split on a task to break one title on ; or ；.</span
             >
           </label>
+          <label class="field block">
+            <span class="field-label">Notes (optional, shared if you add several tasks at once)</span>
+            <textarea
+              id="task-notes"
+              name="notes"
+              rows="2"
+              maxlength="8000"
+              autocomplete="off"
+              placeholder="Extra detail; shown in the list when set"
+            ></textarea>
+          </label>
+          <label class="field block narrow-field">
+            <span class="field-label">Repeat when completed</span>
+            <select id="task-repeat" name="repeat" aria-label="Repeat when completed">
+              <option value="none" selected>No repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <div class="presets-row">
+            <label class="field grow">
+              <span class="field-label">Quick preset</span>
+              <select id="preset-select" aria-label="Apply saved add-form preset">
+                <option value="">— None —</option>
+              </select>
+            </label>
+            <button type="button" id="preset-save" class="btn ghost small">Save preset…</button>
+          </div>
           <div class="add-row">
             <label class="field">
               <span class="field-label">Created</span>
@@ -94,9 +125,25 @@
           <button type="button" class="filter" data-filter="active">Active</button>
           <button type="button" class="filter" data-filter="done">Done</button>
         </div>
+        <div class="toolbar-second-row">
+          <label class="sort-field">
+            <span class="field-label">Sort list</span>
+            <select id="sort-mode" aria-label="Sort list">
+              <option value="schedule">By schedule (due / floating)</option>
+              <option value="due">Due / schedule date</option>
+              <option value="created">Created date</option>
+              <option value="project">Project name</option>
+              <option value="title">Title A–Z</option>
+              <option value="manual">Manual (↑↓ on each row)</option>
+            </select>
+          </label>
+        </div>
         <div class="merge-tools">
           <button type="button" id="toggle-merge" class="btn ghost" aria-pressed="false">
             Merge mode
+          </button>
+          <button type="button" id="toggle-bulk" class="btn ghost" aria-pressed="false">
+            Bulk select
           </button>
           <button
             type="button"
@@ -108,10 +155,21 @@
             View by project
           </button>
         </div>
+        <p id="keyboard-hint" class="keyboard-hint" aria-live="polite">
+          Keyboard: <kbd>/</kbd> search · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>Space</kbd> toggle done ·
+          <kbd>e</kbd> edit
+        </p>
       </section>
 
       <p id="merge-hint" class="merge-hint hidden" role="status"></p>
+      <p id="bulk-hint" class="merge-hint hidden" role="status"></p>
       <p id="search-empty" class="merge-hint hidden" role="status">No tasks match your search.</p>
+
+      <section id="overdue-panel" class="panel overdue-panel" aria-label="Overdue" hidden>
+        <h2 class="upcoming-heading">Needs attention</h2>
+        <p class="upcoming-intro">Open tasks with a due date before today.</p>
+        <div id="overdue-body" class="upcoming-body"></div>
+      </section>
 
       <section id="upcoming-panel" class="panel upcoming-panel" aria-label="Today and tomorrow" hidden>
         <h2 class="upcoming-heading">Coming up</h2>
@@ -147,6 +205,17 @@
           <ul id="cal-detail-done" class="cal-detail-list"></ul>
           <p class="detail-section-label" id="cal-detail-due-label">Due or scheduled, still open</p>
           <ul id="cal-detail-due" class="cal-detail-list cal-detail-due-list"></ul>
+        </div>
+      </section>
+
+      <section id="trash-panel" class="panel trash-panel" aria-label="Recently deleted" hidden>
+        <h2 class="calendar-heading">Recently deleted</h2>
+        <p class="calendar-summary">
+          Restore mistakes or delete forever. Tasks stay here until you restore or purge them.
+        </p>
+        <div id="trash-body" class="trash-body"></div>
+        <div class="trash-actions">
+          <button type="button" id="trash-empty" class="btn danger small hidden">Empty trash…</button>
         </div>
       </section>
 
@@ -229,6 +298,19 @@
               placeholder="Pick existing or type new"
             />
           </label>
+          <label class="field block">
+            <span class="field-label">Notes (optional)</span>
+            <textarea id="edit-notes" rows="3" maxlength="8000" placeholder="Longer context"></textarea>
+          </label>
+          <label class="field block narrow-field">
+            <span class="field-label">Repeat when completed</span>
+            <select id="edit-repeat" aria-label="Repeat when completed">
+              <option value="none">No repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
           <div class="dialog-actions">
             <button type="button" class="btn ghost" id="edit-cancel">Cancel</button>
             <button type="button" class="btn primary" id="edit-save">Save</button>
@@ -271,5 +353,10 @@
       </dialog>
     </div>
     <script src="app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      }
+    </script>
   </body>
 </html>

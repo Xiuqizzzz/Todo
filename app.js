@@ -1,10 +1,13 @@
 const LEGACY_STORAGE_KEY = "todo-simple-v1";
 const APP_STORAGE_KEY = "todo-app-v2";
 const THEME_PREF_KEY = "todo-theme-pref";
+const SORT_PREF_KEY = "todo-sort-mode";
 
-/** @typedef {{ id: string, title: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number }} Task */
+/** @typedef {{ id: string, title: string, notes: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number, repeat: string, manualOrder: number, deletedAt: number | null }} Task */
 
-/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[], projectDeadlines?: Record<string, string> }} Profile */
+/** @typedef {{ id: string, name: string, category: string, dueOffsetDays: number | null }} QuickPreset */
+
+/** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[], projectDeadlines?: Record<string, string>, quickPresets?: QuickPreset[] }} Profile */
 /** @typedef {{ v: 1, activeProfileId: string | null, profiles: Record<string, Profile> }} AppState */
 
 /** @param {any[]} raw */
@@ -45,7 +48,7 @@ function loadAppStateFromStorage() {
           v: 1,
           activeProfileId: id,
           profiles: {
-            [id]: { id, name: "Default", pinHash: null, tasks: migrated, projectDeadlines: {} },
+            [id]: { id, name: "Default", pinHash: null, tasks: migrated, projectDeadlines: {}, quickPresets: [] },
           },
         };
       }
@@ -123,6 +126,66 @@ function ensureProfileProjectDeadlines(p) {
     p.projectDeadlines = {};
   }
   return p.projectDeadlines;
+}
+
+/** @param {Profile} p */
+function ensureQuickPresets(p) {
+  if (!p.quickPresets || !Array.isArray(p.quickPresets)) {
+    p.quickPresets = [];
+  }
+  return p.quickPresets;
+}
+
+/** @param {string} v */
+function normalizeRepeat(v) {
+  if (v === "daily" || v === "weekly" || v === "monthly") return v;
+  return "none";
+}
+
+/** @returns {Task[]} */
+function tasksVisible() {
+  return tasks.filter((t) => !t.deletedAt);
+}
+
+/** @param {string} repeat */
+function addRepeatFromIso(iso, repeat) {
+  if (repeat === "daily") return addDaysISO(iso, 1);
+  if (repeat === "weekly") return addDaysISO(iso, 7);
+  if (repeat === "monthly") {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setMonth(dt.getMonth() + 1);
+    return toLocalISODate(dt);
+  }
+  return iso;
+}
+
+/**
+ * @param {Task} t open task about to be marked complete
+ * @returns {Task | null}
+ */
+function makeRepeatFollowupTask(t) {
+  const rep = normalizeRepeat(t.repeat);
+  if (rep === "none") return null;
+  const anchor = hasHardDueDate(t) ? t.dueDate : t.scheduledDate || t.date;
+  const nextFloating = addRepeatFromIso(anchor, rep);
+  const nextDue = hasHardDueDate(t) ? nextFloating : "";
+  const nextSched = hasHardDueDate(t) ? nextDue : nextFloating;
+  return {
+    id: crypto.randomUUID(),
+    title: t.title,
+    notes: t.notes || "",
+    date: todayISODate(),
+    dueDate: nextDue,
+    scheduledDate: nextSched || todayISODate(),
+    completedDate: "",
+    category: t.category || "",
+    done: false,
+    createdAt: Date.now(),
+    repeat: rep,
+    manualOrder: typeof t.manualOrder === "number" ? t.manualOrder : 0,
+    deletedAt: null,
+  };
 }
 
 function getActiveProjectDeadlines() {
@@ -265,12 +328,22 @@ function normalizeLoadedTask(t) {
   }
   const completedDate =
     typeof t.completedDate === "string" ? t.completedDate : "";
+  const notes = typeof t.notes === "string" ? t.notes : "";
+  const repeat = normalizeRepeat(t.repeat);
+  const manualOrder =
+    typeof t.manualOrder === "number" && Number.isFinite(t.manualOrder) ? t.manualOrder : 0;
+  const deletedAt =
+    typeof t.deletedAt === "number" && Number.isFinite(t.deletedAt) ? t.deletedAt : null;
   return {
     ...t,
     date,
     dueDate,
     scheduledDate,
     completedDate,
+    notes,
+    repeat,
+    manualOrder,
+    deletedAt,
   };
 }
 
@@ -297,6 +370,7 @@ function rollFloatingSchedules() {
   const today = todayISODate();
   let changed = false;
   for (const t of tasks) {
+    if (t.deletedAt) continue;
     if (t.done) continue;
     if (hasHardDueDate(t)) continue;
     const sd = t.scheduledDate || t.date || today;
@@ -308,14 +382,90 @@ function rollFloatingSchedules() {
   if (changed) saveTasks(tasks);
 }
 
-/** @param {Task[]} tasks */
-function sortTasks(tasks) {
-  return [...tasks].sort((a, b) => {
+/** @param {Task[]} taskArr */
+function sortTasks(taskArr) {
+  return [...taskArr].sort((a, b) => {
     const da = effectiveScheduleDate(a);
     const db = effectiveScheduleDate(b);
     if (da !== db) return da.localeCompare(db);
     return a.createdAt - b.createdAt;
   });
+}
+
+function getSortMode() {
+  const raw = localStorage.getItem(SORT_PREF_KEY);
+  if (
+    raw === "due" ||
+    raw === "created" ||
+    raw === "project" ||
+    raw === "title" ||
+    raw === "manual"
+  ) {
+    return raw;
+  }
+  return "schedule";
+}
+
+/** @param {string} mode */
+function setSortMode(mode) {
+  localStorage.setItem(SORT_PREF_KEY, mode);
+}
+
+function normalizeManualOrdersForVisible() {
+  const vis = tasksVisible();
+  const sorted = sortTasks(vis);
+  sorted.forEach((t, i) => {
+    t.manualOrder = i;
+  });
+  flushTasksToActiveProfile();
+  persistAppState();
+}
+
+/** @param {Task[]} list */
+function applyListSort(list) {
+  const mode = getSortMode();
+  if (mode === "schedule") return sortTasks(list);
+  if (mode === "due") {
+    return [...list].sort((a, b) => {
+      const da = effectiveScheduleDate(a);
+      const db = effectiveScheduleDate(b);
+      if (da !== db) return da.localeCompare(db);
+      return a.createdAt - b.createdAt;
+    });
+  }
+  if (mode === "created") {
+    return [...list].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.createdAt - b.createdAt;
+    });
+  }
+  if (mode === "project") {
+    return [...list].sort((a, b) => {
+      const ca = (a.category || "").trim().toLowerCase();
+      const cb = (b.category || "").trim().toLowerCase();
+      if (ca !== cb) {
+        if (!ca) return 1;
+        if (!cb) return -1;
+        return ca.localeCompare(cb, "en");
+      }
+      const da = effectiveScheduleDate(a);
+      const db = effectiveScheduleDate(b);
+      if (da !== db) return da.localeCompare(db);
+      return a.createdAt - b.createdAt;
+    });
+  }
+  if (mode === "title") {
+    return [...list].sort((a, b) =>
+      a.title.trim().localeCompare(b.title.trim(), "en", { sensitivity: "base" })
+    );
+  }
+  if (mode === "manual") {
+    return [...list].sort((a, b) => {
+      if (a.manualOrder !== b.manualOrder) return a.manualOrder - b.manualOrder;
+      return a.createdAt - b.createdAt;
+    });
+  }
+  return sortTasks(list);
 }
 
 /** @param {string} iso */
@@ -347,7 +497,8 @@ function taskMatchesSearch(t, q) {
   if (!q) return true;
   const title = String(t.title).toLowerCase();
   const cat = String(t.category || "").toLowerCase();
-  return title.includes(q) || cat.includes(q);
+  const notes = String(t.notes || "").toLowerCase();
+  return title.includes(q) || cat.includes(q) || notes.includes(q);
 }
 
 function getThemePref() {
@@ -385,7 +536,7 @@ function syncProjectDatalist() {
   const dl = document.getElementById("project-datalist");
   if (!dl) return;
   const names = [
-    ...new Set(tasks.map((t) => String(t.category || "").trim()).filter(Boolean)),
+    ...new Set(tasksVisible().map((t) => String(t.category || "").trim()).filter(Boolean)),
   ].sort((a, b) => a.localeCompare(b, "en"));
   dl.innerHTML = "";
   names.forEach((name) => {
@@ -463,6 +614,8 @@ const els = {
   editDate: /** @type {HTMLInputElement} */ (document.getElementById("edit-date")),
   editDueDate: /** @type {HTMLInputElement} */ (document.getElementById("edit-due-date")),
   editCategory: /** @type {HTMLInputElement} */ (document.getElementById("edit-category")),
+  editNotes: /** @type {HTMLTextAreaElement} */ (document.getElementById("edit-notes")),
+  editRepeat: /** @type {HTMLSelectElement} */ (document.getElementById("edit-repeat")),
   editCancel: /** @type {HTMLButtonElement} */ (document.getElementById("edit-cancel")),
   editSave: /** @type {HTMLButtonElement} */ (document.getElementById("edit-save")),
   accountGate: /** @type {HTMLDialogElement} */ (document.getElementById("account-gate")),
@@ -484,15 +637,32 @@ const els = {
   splitConfirm: /** @type {HTMLButtonElement} */ (document.getElementById("split-confirm")),
   upcomingPanel: /** @type {HTMLElement | null} */ (document.getElementById("upcoming-panel")),
   upcomingBody: /** @type {HTMLDivElement | null} */ (document.getElementById("upcoming-body")),
+  overduePanel: /** @type {HTMLElement | null} */ (document.getElementById("overdue-panel")),
+  overdueBody: /** @type {HTMLDivElement | null} */ (document.getElementById("overdue-body")),
+  trashPanel: /** @type {HTMLElement | null} */ (document.getElementById("trash-panel")),
+  trashBody: /** @type {HTMLDivElement | null} */ (document.getElementById("trash-body")),
+  trashEmpty: /** @type {HTMLButtonElement | null} */ (document.getElementById("trash-empty")),
+  sortMode: /** @type {HTMLSelectElement | null} */ (document.getElementById("sort-mode")),
+  toggleBulk: /** @type {HTMLButtonElement | null} */ (document.getElementById("toggle-bulk")),
+  bulkHint: /** @type {HTMLParagraphElement | null} */ (document.getElementById("bulk-hint")),
+  taskNotes: /** @type {HTMLTextAreaElement | null} */ (document.getElementById("task-notes")),
+  taskRepeat: /** @type {HTMLSelectElement | null} */ (document.getElementById("task-repeat")),
+  presetSelect: /** @type {HTMLSelectElement | null} */ (document.getElementById("preset-select")),
+  presetSave: /** @type {HTMLButtonElement | null} */ (document.getElementById("preset-save")),
 };
 
 /** @type {Task[]} */
 let tasks = [];
 let filter = "all";
 let mergeMode = false;
+let bulkMode = false;
 let projectViewMode = false;
 /** @type {Set<string>} */
 let mergeSelection = new Set();
+/** @type {Set<string>} */
+let bulkSelection = new Set();
+/** @type {string | null} */
+let keyboardFocusTaskId = null;
 /** @type {Task[] | null} */
 let pendingMergeTasks = null;
 /** @type {string | null} */
@@ -595,7 +765,7 @@ function buildAccountGateBody(mode) {
       }
       const id = crypto.randomUUID();
       const pinHash = p1.trim() ? await hashPin(p1.trim()) : null;
-      appState.profiles[id] = { id, name, pinHash, tasks: [], projectDeadlines: {} };
+      appState.profiles[id] = { id, name, pinHash, tasks: [], projectDeadlines: {}, quickPresets: [] };
       appState.activeProfileId = id;
       unlockProfileSession(id);
       persistAppState();
@@ -685,13 +855,34 @@ function bootstrapTaskFormAndRender() {
   const initDay = todayISODate();
   els.taskDate.value = initDay;
   els.taskDueDate.value = "";
+  if (els.sortMode) els.sortMode.value = getSortMode();
+  keyboardFocusTaskId = null;
+  syncPresetSelect();
   render();
 }
 
 function getFilteredTasks() {
-  if (filter === "active") return tasks.filter((t) => !t.done);
-  if (filter === "done") return tasks.filter((t) => t.done);
-  return tasks;
+  const base = tasksVisible();
+  if (filter === "active") return base.filter((t) => !t.done);
+  if (filter === "done") return base.filter((t) => t.done);
+  return base;
+}
+
+/** @param {Task} task @param {number} delta */
+function moveTaskInManualOrder(task, delta) {
+  const q = getSearchQuery();
+  const list = applyListSort(getFilteredTasks().filter((t) => taskMatchesSearch(t, q)));
+  const idx = list.findIndex((t) => t.id === task.id);
+  const j = idx + delta;
+  if (idx < 0 || j < 0 || j >= list.length) return;
+  const a = list[idx];
+  const b = list[j];
+  const tmp = a.manualOrder;
+  a.manualOrder = b.manualOrder;
+  b.manualOrder = tmp;
+  saveTasks(tasks);
+  keyboardFocusTaskId = task.id;
+  render();
 }
 
 /**
@@ -702,7 +893,9 @@ function createTaskRow(task) {
   const li = document.createElement("li");
   const hardDue = hasHardDueDate(task);
   const overdue = !task.done && hardDue && isOverdue(task.dueDate);
-  li.className = "task-item" + (task.done ? " done" : "") + (overdue ? " overdue" : "");
+  let cls = "task-item" + (task.done ? " done" : "") + (overdue ? " overdue" : "");
+  if (keyboardFocusTaskId === task.id) cls += " task-keyboard-focus";
+  li.className = cls;
   li.dataset.id = task.id;
 
   if (mergeMode) {
@@ -718,6 +911,19 @@ function createTaskRow(task) {
       renderMergeBar();
     });
     li.appendChild(cb);
+  } else if (bulkMode) {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "task-merge-check";
+    cb.checked = bulkSelection.has(task.id);
+    cb.setAttribute("aria-label", "Select for bulk action");
+    cb.addEventListener("change", () => {
+      if (cb.checked) bulkSelection.add(task.id);
+      else bulkSelection.delete(task.id);
+      setBulkHint();
+      renderBulkBar();
+    });
+    li.appendChild(cb);
   } else {
     const toggle = document.createElement("input");
     toggle.type = "checkbox";
@@ -725,8 +931,15 @@ function createTaskRow(task) {
     toggle.checked = task.done;
     toggle.setAttribute("aria-label", "Mark complete");
     toggle.addEventListener("change", () => {
-      task.done = toggle.checked;
-      task.completedDate = toggle.checked ? todayISODate() : "";
+      if (!task.done && toggle.checked && normalizeRepeat(task.repeat) !== "none") {
+        const follow = makeRepeatFollowupTask(task);
+        task.done = true;
+        task.completedDate = todayISODate();
+        if (follow) tasks.push(follow);
+      } else {
+        task.done = toggle.checked;
+        task.completedDate = toggle.checked ? todayISODate() : "";
+      }
       saveTasks(tasks);
       render();
     });
@@ -739,6 +952,12 @@ function createTaskRow(task) {
   title.className = "task-title";
   title.textContent = task.title;
   body.appendChild(title);
+  if (task.notes && task.notes.trim()) {
+    const notesEl = document.createElement("p");
+    notesEl.className = "task-notes-preview";
+    notesEl.textContent = task.notes.trim();
+    body.appendChild(notesEl);
+  }
   const meta = document.createElement("p");
   meta.className = "task-meta";
   const created = document.createElement("span");
@@ -768,12 +987,42 @@ function createTaskRow(task) {
     cat.textContent = "Project · " + task.category.trim();
     meta.appendChild(cat);
   }
+  const rep = normalizeRepeat(task.repeat);
+  if (rep !== "none") {
+    const repEl = document.createElement("span");
+    repEl.className = "task-repeat-badge";
+    repEl.textContent =
+      "Repeats · " + (rep === "daily" ? "daily" : rep === "weekly" ? "weekly" : "monthly");
+    meta.appendChild(repEl);
+  }
   body.appendChild(meta);
   li.appendChild(body);
 
   const actions = document.createElement("div");
   actions.className = "task-actions";
-  if (!mergeMode) {
+  if (
+    !mergeMode &&
+    !bulkMode &&
+    getSortMode() === "manual" &&
+    !projectViewMode &&
+    taskMatchesSearch(task, getSearchQuery())
+  ) {
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "btn small ghost";
+    up.textContent = "↑";
+    up.title = "Move up in manual order";
+    up.addEventListener("click", () => moveTaskInManualOrder(task, -1));
+    actions.appendChild(up);
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "btn small ghost";
+    down.textContent = "↓";
+    down.title = "Move down in manual order";
+    down.addEventListener("click", () => moveTaskInManualOrder(task, 1));
+    actions.appendChild(down);
+  }
+  if (!mergeMode && !bulkMode) {
     const splitBtn = document.createElement("button");
     splitBtn.type = "button";
     splitBtn.className = "btn small ghost";
@@ -793,8 +1042,9 @@ function createTaskRow(task) {
   del.className = "btn small danger";
   del.textContent = "Delete";
   del.addEventListener("click", () => {
-    tasks = tasks.filter((t) => t.id !== task.id);
+    task.deletedAt = Date.now();
     mergeSelection.delete(task.id);
+    bulkSelection.delete(task.id);
     if (pendingSplitTaskId === task.id) {
       pendingSplitTaskId = null;
       els.splitDialog.close();
@@ -807,6 +1057,8 @@ function createTaskRow(task) {
     render();
     setSelectedCountLabel();
     renderMergeBar();
+    setBulkHint();
+    renderBulkBar();
   });
   actions.appendChild(del);
   li.appendChild(actions);
@@ -845,8 +1097,8 @@ function renderUpcoming() {
   panel.hidden = false;
   const t0 = todayISODate();
   const t1 = addDaysISO(t0, 1);
-  const todayTasks = tasks.filter((x) => !x.done && openTaskAnchorDate(x) === t0);
-  const tomTasks = tasks.filter((x) => !x.done && openTaskAnchorDate(x) === t1);
+  const todayTasks = tasksVisible().filter((x) => !x.done && openTaskAnchorDate(x) === t0);
+  const tomTasks = tasksVisible().filter((x) => !x.done && openTaskAnchorDate(x) === t1);
   body.innerHTML = "";
   const makeBlock = (/** @type {string} */ label, /** @type {Task[]} */ arr) => {
     const div = document.createElement("div");
@@ -882,15 +1134,369 @@ function renderUpcoming() {
   body.appendChild(makeBlock("Tomorrow", tomTasks));
 }
 
+function renderOverdue() {
+  const panel = els.overduePanel;
+  const body = els.overdueBody;
+  if (!panel || !body) return;
+  if (!appState.activeProfileId || !isProfileSessionUnlocked(appState.activeProfileId)) {
+    panel.hidden = true;
+    return;
+  }
+  const today = todayISODate();
+  const overdueTasks = tasksVisible().filter(
+    (t) => !t.done && hasHardDueDate(t) && t.dueDate < today
+  );
+  panel.hidden = false;
+  body.innerHTML = "";
+  if (overdueTasks.length === 0) {
+    const p = document.createElement("p");
+    p.className = "upcoming-empty";
+    p.textContent = "Nothing overdue.";
+    body.appendChild(p);
+    return;
+  }
+  const ul = document.createElement("ul");
+  ul.className = "upcoming-list";
+  overdueTasks.slice(0, 12).forEach((t) => {
+    const li = document.createElement("li");
+    li.textContent = `${t.title} · due ${formatDateLabel(t.dueDate)}`;
+    ul.appendChild(li);
+  });
+  body.appendChild(ul);
+  if (overdueTasks.length > 12) {
+    const more = document.createElement("p");
+    more.className = "upcoming-more";
+    more.textContent = `+${overdueTasks.length - 12} more in the list below`;
+    body.appendChild(more);
+  }
+}
+
+function renderTrash() {
+  const panel = els.trashPanel;
+  const body = els.trashBody;
+  const emptyBtn = els.trashEmpty;
+  if (!panel || !body) return;
+  if (!appState.activeProfileId || !isProfileSessionUnlocked(appState.activeProfileId)) {
+    panel.hidden = true;
+    return;
+  }
+  const trashed = tasks
+    .filter((t) => t.deletedAt)
+    .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+  panel.hidden = false;
+  body.innerHTML = "";
+  if (trashed.length === 0) {
+    const p = document.createElement("p");
+    p.className = "upcoming-empty";
+    p.textContent = "Trash is empty.";
+    body.appendChild(p);
+    if (emptyBtn) emptyBtn.classList.add("hidden");
+    return;
+  }
+  if (emptyBtn) emptyBtn.classList.remove("hidden");
+  const list = document.createElement("ul");
+  list.className = "trash-list";
+  trashed.forEach((t) => {
+    const li = document.createElement("li");
+    li.className = "trash-row";
+    const label = document.createElement("span");
+    label.className = "trash-row-label";
+    label.textContent = t.title;
+    li.appendChild(label);
+    const tools = document.createElement("div");
+    tools.className = "trash-row-tools";
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "btn small ghost";
+    restore.textContent = "Restore";
+    restore.addEventListener("click", () => {
+      t.deletedAt = null;
+      saveTasks(tasks);
+      render();
+    });
+    const forever = document.createElement("button");
+    forever.type = "button";
+    forever.className = "btn small danger";
+    forever.textContent = "Delete forever";
+    forever.addEventListener("click", () => {
+      tasks = tasks.filter((x) => x.id !== t.id);
+      mergeSelection.delete(t.id);
+      bulkSelection.delete(t.id);
+      saveTasks(tasks);
+      render();
+      setSelectedCountLabel();
+      renderMergeBar();
+      setBulkHint();
+      renderBulkBar();
+    });
+    tools.appendChild(restore);
+    tools.appendChild(forever);
+    li.appendChild(tools);
+    list.appendChild(li);
+  });
+  body.appendChild(list);
+}
+
+function syncPresetSelect() {
+  const sel = els.presetSelect;
+  if (!sel || !appState.activeProfileId) return;
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) return;
+  const presets = ensureQuickPresets(p);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— None —</option>';
+  presets
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "en"))
+    .forEach((pr) => {
+      const opt = document.createElement("option");
+      opt.value = pr.id;
+      opt.textContent = pr.name;
+      sel.appendChild(opt);
+    });
+  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+
+function setBulkHint() {
+  const el = els.bulkHint;
+  if (!el) return;
+  if (!bulkMode) {
+    el.classList.add("hidden");
+    el.textContent = "";
+    return;
+  }
+  const n = bulkSelection.size;
+  el.classList.remove("hidden");
+  if (n === 0) {
+    el.innerHTML =
+      "Bulk select: choose tasks, then use the action bar or tap <strong>Clear selection</strong>.";
+    return;
+  }
+  el.innerHTML = `<strong>${n}</strong> selected—use the bar below or keep selecting.`;
+}
+
+function renderBulkBar() {
+  const existing = document.getElementById("bulk-action-bar");
+  if (existing) existing.remove();
+  if (!bulkMode || bulkSelection.size === 0) return;
+  const bar = document.createElement("div");
+  bar.id = "bulk-action-bar";
+  bar.className = "bulk-action-bar";
+  const mkBtn = (/** @type {string} */ label, /** @type {() => void} */ fn) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn ghost small";
+    b.textContent = label;
+    b.addEventListener("click", fn);
+    return b;
+  };
+  bar.appendChild(mkBtn("Mark done", bulkMarkDone));
+  bar.appendChild(mkBtn("Mark active", bulkMarkActive));
+  bar.appendChild(mkBtn("Set project…", bulkSetProject));
+  bar.appendChild(mkBtn("Set due…", bulkSetDue));
+  bar.appendChild(mkBtn("Clear due", bulkClearDue));
+  bar.appendChild(mkBtn("Remove", bulkMoveToTrash));
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "btn ghost small";
+  clear.textContent = "Clear selection";
+  clear.addEventListener("click", () => {
+    bulkSelection.clear();
+    setBulkHint();
+    renderBulkBar();
+    render();
+  });
+  bar.appendChild(clear);
+  document.querySelector(".app")?.appendChild(bar);
+}
+
+function bulkMarkDone() {
+  const ids = bulkSelection;
+  tasks.forEach((t) => {
+    if (ids.has(t.id) && !t.deletedAt) {
+      t.done = true;
+      t.completedDate = todayISODate();
+    }
+  });
+  saveTasks(tasks);
+  bulkSelection.clear();
+  setBulkHint();
+  renderBulkBar();
+  render();
+}
+
+function bulkMarkActive() {
+  const ids = bulkSelection;
+  tasks.forEach((t) => {
+    if (ids.has(t.id) && !t.deletedAt) {
+      t.done = false;
+      t.completedDate = "";
+    }
+  });
+  saveTasks(tasks);
+  bulkSelection.clear();
+  setBulkHint();
+  renderBulkBar();
+  render();
+}
+
+function bulkSetProject() {
+  const v = window.prompt("Project name (empty clears)", "");
+  if (v === null) return;
+  const ids = bulkSelection;
+  tasks.forEach((t) => {
+    if (ids.has(t.id) && !t.deletedAt) t.category = v.trim();
+  });
+  saveTasks(tasks);
+  bulkSelection.clear();
+  setBulkHint();
+  renderBulkBar();
+  render();
+}
+
+function bulkSetDue() {
+  const v = window.prompt("Due date (YYYY-MM-DD) or empty to clear", todayISODate());
+  if (v === null) return;
+  const raw = v.trim();
+  const ids = bulkSelection;
+  tasks.forEach((t) => {
+    if (!ids.has(t.id) || t.deletedAt) return;
+    if (!raw) {
+      t.dueDate = "";
+      t.scheduledDate = t.scheduledDate || t.date;
+    } else {
+      t.dueDate = raw;
+      t.scheduledDate = raw;
+    }
+  });
+  saveTasks(tasks);
+  bulkSelection.clear();
+  setBulkHint();
+  renderBulkBar();
+  render();
+}
+
+function bulkClearDue() {
+  const ids = bulkSelection;
+  tasks.forEach((t) => {
+    if (ids.has(t.id) && !t.deletedAt) {
+      t.dueDate = "";
+      t.scheduledDate = t.scheduledDate || t.date;
+    }
+  });
+  saveTasks(tasks);
+  bulkSelection.clear();
+  setBulkHint();
+  renderBulkBar();
+  render();
+}
+
+function bulkMoveToTrash() {
+  const ids = bulkSelection;
+  const now = Date.now();
+  tasks.forEach((t) => {
+    if (ids.has(t.id) && !t.deletedAt) t.deletedAt = now;
+  });
+  saveTasks(tasks);
+  bulkSelection.clear();
+  setBulkHint();
+  renderBulkBar();
+  render();
+  setSelectedCountLabel();
+  renderMergeBar();
+}
+
+function getNavigableTaskIds() {
+  const q = getSearchQuery();
+  return applyListSort(getFilteredTasks().filter((t) => taskMatchesSearch(t, q))).map((t) => t.id);
+}
+
+function focusTaskByKeyboard(taskId) {
+  keyboardFocusTaskId = taskId;
+  render();
+  queueMicrotask(() => {
+    const row = els.taskList.querySelector(`li.task-item[data-id="${taskId}"]`);
+    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+}
+
+function initKeyboardNav() {
+  document.addEventListener("keydown", (e) => {
+    if (mergeMode || bulkMode) return;
+    const tEl = e.target;
+    const tag =
+      tEl && tEl instanceof HTMLElement ? tEl.tagName : "";
+    if (
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT" ||
+      tag === "BUTTON" ||
+      (tEl instanceof HTMLElement && tEl.isContentEditable)
+    ) {
+      return;
+    }
+    if (document.querySelector("dialog[open]")) return;
+
+    if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      els.taskSearch?.focus();
+      return;
+    }
+
+    const ids = getNavigableTaskIds();
+    if (ids.length === 0) return;
+    let idx = keyboardFocusTaskId ? ids.indexOf(keyboardFocusTaskId) : -1;
+
+    if (e.key === "j" || e.key === "ArrowDown") {
+      e.preventDefault();
+      idx = Math.min(ids.length - 1, idx + 1);
+      if (idx < 0) idx = 0;
+      focusTaskByKeyboard(ids[idx]);
+      return;
+    }
+    if (e.key === "k" || e.key === "ArrowUp") {
+      e.preventDefault();
+      idx = idx < 0 ? ids.length - 1 : Math.max(0, idx - 1);
+      focusTaskByKeyboard(ids[idx]);
+      return;
+    }
+
+    if (!keyboardFocusTaskId) return;
+    const task = tasks.find((t) => t.id === keyboardFocusTaskId);
+    if (!task || task.deletedAt) return;
+
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      if (!task.done && normalizeRepeat(task.repeat) !== "none") {
+        const follow = makeRepeatFollowupTask(task);
+        task.done = true;
+        task.completedDate = todayISODate();
+        if (follow) tasks.push(follow);
+      } else {
+        task.done = !task.done;
+        task.completedDate = task.done ? todayISODate() : "";
+      }
+      saveTasks(tasks);
+      render();
+      return;
+    }
+
+    if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      openEditDialog(task);
+    }
+  });
+}
+
 function render() {
   rollFloatingSchedules();
   syncProjectDatalist();
   const q = getSearchQuery();
   const list = getFilteredTasks().filter((t) => taskMatchesSearch(t, q));
-  const sorted = sortTasks(list);
+  const sorted = applyListSort(list);
   els.taskList.innerHTML = "";
 
-  if (projectViewMode && !mergeMode) {
+  if (projectViewMode && !mergeMode && !bulkMode) {
     /** @type {Map<string, { display: string, tasks: Task[] }>} */
     const groups = new Map();
     for (const task of sorted) {
@@ -979,7 +1585,7 @@ function render() {
     sorted.forEach((task) => els.taskList.appendChild(createTaskRow(task)));
   }
 
-  const hasAny = tasks.length > 0;
+  const hasAny = tasksVisible().length > 0;
   const baseList = getFilteredTasks();
   const searchNoHits = Boolean(q && sorted.length === 0 && baseList.length > 0);
   if (els.searchEmpty) {
@@ -988,17 +1594,20 @@ function render() {
   els.emptyState.classList.toggle("hidden", hasAny);
   els.taskList.classList.toggle("hidden", !hasAny || searchNoHits);
   renderUpcoming();
+  renderOverdue();
+  renderTrash();
+  syncPresetSelect();
   renderCalendar();
 }
 
 /** @param {string} iso */
 function tasksCompletedOnDay(iso) {
-  return tasks.filter((t) => t.done && t.completedDate === iso);
+  return tasksVisible().filter((t) => t.done && t.completedDate === iso);
 }
 
 /** @param {string} iso */
 function tasksDueNotDoneOnDay(iso) {
-  return tasks.filter((t) => {
+  return tasksVisible().filter((t) => {
     if (t.done) return false;
     if (hasHardDueDate(t)) return t.dueDate === iso;
     return (t.scheduledDate || t.date) === iso;
@@ -1028,8 +1637,8 @@ function goCalendarThisMonth() {
 
 function renderCalendar() {
   const prefix = calendarMonthPrefix(viewCalendarYear, viewCalendarMonth);
-  const activeCount = tasks.filter((t) => !t.done).length;
-  const monthDoneCount = tasks.filter(
+  const activeCount = tasksVisible().filter((t) => !t.done).length;
+  const monthDoneCount = tasksVisible().filter(
     (t) => t.done && typeof t.completedDate === "string" && t.completedDate.startsWith(prefix)
   ).length;
 
@@ -1200,6 +1809,7 @@ function applySplitFromDialog() {
   const newTasks = lines.map((title, i) => ({
     id: crypto.randomUUID(),
     title,
+    notes: source.notes || "",
     date: creation,
     dueDate: dueRaw,
     scheduledDate: dueRaw || sched,
@@ -1207,6 +1817,9 @@ function applySplitFromDialog() {
     category: cat,
     done: false,
     createdAt: baseTime + i,
+    repeat: normalizeRepeat(source.repeat),
+    manualOrder: 0,
+    deletedAt: null,
   }));
   tasks = tasks.filter((t) => t.id !== sid);
   mergeSelection.delete(sid);
@@ -1231,6 +1844,8 @@ function openEditDialog(task) {
   els.editDate.value = task.date;
   els.editDueDate.value = task.dueDate || "";
   els.editCategory.value = task.category || "";
+  els.editNotes.value = task.notes || "";
+  els.editRepeat.value = normalizeRepeat(task.repeat);
   els.editDialog.showModal();
   queueMicrotask(() => els.editTitle.focus());
 }
@@ -1288,6 +1903,8 @@ els.editSave.addEventListener("click", () => {
   task.dueDate = dueRaw;
   task.scheduledDate = dueRaw || creation;
   task.category = els.editCategory.value.trim();
+  task.notes = els.editNotes.value;
+  task.repeat = normalizeRepeat(els.editRepeat.value);
   saveTasks(tasks);
   editingTaskId = null;
   els.editDialog.close();
@@ -1308,6 +1925,7 @@ els.mergeConfirm.addEventListener("click", () => {
   const replacement = {
     id: crypto.randomUUID(),
     title,
+    notes: pendingMergeTasks.map((t) => (t.notes || "").trim()).filter(Boolean).join("\n---\n"),
     date: els.mergeDate.value || prev.date,
     dueDate: dueVal,
     scheduledDate: dueVal || prev.scheduledDate || todayISODate(),
@@ -1315,6 +1933,9 @@ els.mergeConfirm.addEventListener("click", () => {
     done: prev.done,
     completedDate: prev.completedDate || "",
     createdAt: Date.now(),
+    repeat: "none",
+    manualOrder: 0,
+    deletedAt: null,
   };
   applyMerge(replacement);
 });
@@ -1326,11 +1947,14 @@ els.addForm.addEventListener("submit", (e) => {
   const creation = els.taskDate.value || todayISODate();
   const dueRaw = els.taskDueDate.value.trim();
   const cat = els.taskCategory.value.trim();
+  const notesVal = (els.taskNotes?.value || "").trim();
+  const repeatVal = normalizeRepeat(els.taskRepeat?.value || "none");
   const baseTime = Date.now();
   lines.forEach((title, i) => {
     tasks.push({
       id: crypto.randomUUID(),
       title,
+      notes: notesVal,
       date: creation,
       dueDate: dueRaw,
       scheduledDate: dueRaw || creation,
@@ -1338,11 +1962,16 @@ els.addForm.addEventListener("submit", (e) => {
       category: cat,
       done: false,
       createdAt: baseTime + i,
+      repeat: repeatVal,
+      manualOrder: 0,
+      deletedAt: null,
     });
   });
   saveTasks(tasks);
   els.taskTitle.value = "";
   els.taskCategory.value = "";
+  if (els.taskNotes) els.taskNotes.value = "";
+  if (els.taskRepeat) els.taskRepeat.value = "none";
   const t = todayISODate();
   els.taskDate.value = t;
   els.taskDueDate.value = "";
@@ -1355,8 +1984,12 @@ els.filters.forEach((btn) => {
     btn.classList.add("active");
     filter = btn.dataset.filter || "all";
     mergeSelection.clear();
+    bulkSelection.clear();
+    keyboardFocusTaskId = null;
     setSelectedCountLabel();
     renderMergeBar();
+    setBulkHint();
+    renderBulkBar();
     render();
   });
 });
@@ -1365,13 +1998,39 @@ els.toggleMerge.addEventListener("click", () => {
   mergeMode = !mergeMode;
   if (mergeMode) {
     projectViewMode = false;
+    bulkMode = false;
+    bulkSelection.clear();
     els.toggleProjectView.setAttribute("aria-pressed", "false");
+    els.toggleBulk?.setAttribute("aria-pressed", "false");
+    document.getElementById("bulk-action-bar")?.remove();
+    setBulkHint();
   }
   els.toggleMerge.setAttribute("aria-pressed", String(mergeMode));
   mergeSelection.clear();
   pendingMergeTasks = null;
   document.getElementById("merge-selected-bar")?.remove();
+  keyboardFocusTaskId = null;
   setSelectedCountLabel();
+  render();
+});
+
+els.toggleBulk?.addEventListener("click", () => {
+  bulkMode = !bulkMode;
+  if (bulkMode) {
+    projectViewMode = false;
+    mergeMode = false;
+    mergeSelection.clear();
+    pendingMergeTasks = null;
+    els.toggleProjectView.setAttribute("aria-pressed", "false");
+    els.toggleMerge.setAttribute("aria-pressed", "false");
+    document.getElementById("merge-selected-bar")?.remove();
+    setSelectedCountLabel();
+  }
+  els.toggleBulk.setAttribute("aria-pressed", String(bulkMode));
+  bulkSelection.clear();
+  document.getElementById("bulk-action-bar")?.remove();
+  keyboardFocusTaskId = null;
+  setBulkHint();
   render();
 });
 
@@ -1379,13 +2038,76 @@ els.toggleProjectView.addEventListener("click", () => {
   projectViewMode = !projectViewMode;
   if (projectViewMode) {
     mergeMode = false;
+    bulkMode = false;
     mergeSelection.clear();
+    bulkSelection.clear();
     pendingMergeTasks = null;
     document.getElementById("merge-selected-bar")?.remove();
+    document.getElementById("bulk-action-bar")?.remove();
     els.toggleMerge.setAttribute("aria-pressed", "false");
+    els.toggleBulk?.setAttribute("aria-pressed", "false");
     setSelectedCountLabel();
+    setBulkHint();
   }
   els.toggleProjectView.setAttribute("aria-pressed", String(projectViewMode));
+  keyboardFocusTaskId = null;
+  render();
+});
+
+els.sortMode?.addEventListener("change", () => {
+  const v = els.sortMode?.value || "schedule";
+  setSortMode(v);
+  if (v === "manual") normalizeManualOrdersForVisible();
+  keyboardFocusTaskId = null;
+  render();
+});
+
+els.presetSelect?.addEventListener("change", () => {
+  const id = els.presetSelect?.value;
+  if (!id || !appState.activeProfileId) return;
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) return;
+  const pr = ensureQuickPresets(p).find((x) => x.id === id);
+  if (!pr) return;
+  if (els.taskCategory) els.taskCategory.value = pr.category || "";
+  if (els.taskDueDate) {
+    if (pr.dueOffsetDays == null) els.taskDueDate.value = "";
+    else els.taskDueDate.value = addDaysISO(todayISODate(), pr.dueOffsetDays);
+  }
+});
+
+els.presetSave?.addEventListener("click", () => {
+  if (!appState.activeProfileId) return;
+  const p = appState.profiles[appState.activeProfileId];
+  if (!p) return;
+  const name = window.prompt("Name for this preset (e.g. Work errands)", "");
+  if (!name || !name.trim()) return;
+  const creation = els.taskDate.value || todayISODate();
+  const dueRaw = els.taskDueDate.value.trim();
+  let dueOffsetDays = null;
+  if (dueRaw) {
+    const t0 = new Date(creation + "T12:00:00");
+    const t1 = new Date(dueRaw + "T12:00:00");
+    dueOffsetDays = Math.round((t1 - t0) / 86400000);
+  }
+  const presetId = crypto.randomUUID();
+  ensureQuickPresets(p).push({
+    id: presetId,
+    name: name.trim(),
+    category: els.taskCategory.value.trim(),
+    dueOffsetDays,
+  });
+  persistAppState();
+  syncPresetSelect();
+  if (els.presetSelect) els.presetSelect.value = presetId;
+});
+
+els.trashEmpty?.addEventListener("click", () => {
+  const n = tasks.filter((t) => t.deletedAt).length;
+  if (!n) return;
+  if (!window.confirm(`Delete all ${n} task${n === 1 ? "" : "s"} in trash permanently?`)) return;
+  tasks = tasks.filter((t) => !t.deletedAt);
+  saveTasks(tasks);
   render();
 });
 
@@ -1484,6 +2206,7 @@ els.accountPinSubmit.addEventListener("click", async () => {
 
 applyThemePref();
 updateThemeButtonLabel();
+initKeyboardNav();
 
 if (needsAccountGate()) {
   const id = appState.activeProfileId;

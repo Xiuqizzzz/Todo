@@ -1,0 +1,17 @@
+{
+  "name": "Todo",
+  "short_name": "Todo",
+  "description": "Local-first tasks, calendar, and projects",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f4f1",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d9488'/%3E%3Cpath fill='white' d='M18 34l8 8 20-22-6-5-14 16-3-3-5 6z'/%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
