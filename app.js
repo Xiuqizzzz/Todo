@@ -3,7 +3,7 @@ const APP_STORAGE_KEY = "todo-app-v2";
 const THEME_PREF_KEY = "todo-theme-pref";
 const SORT_PREF_KEY = "todo-sort-mode";
 
-/** @typedef {{ id: string, title: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number, manualOrder: number, deletedAt: number | null }} Task */
+/** @typedef {{ id: string, title: string, kind: string, done: boolean, date: string, dueDate: string, scheduledDate: string, completedDate: string, category: string, createdAt: number, manualOrder: number, deletedAt: number | null }} Task */
 
 /** @typedef {{ id: string, name: string, pinHash: string | null, tasks: Task[], projectDeadlines?: Record<string, string> }} Profile */
 /** @typedef {{ v: 1, activeProfileId: string | null, profiles: Record<string, Profile> }} AppState */
@@ -278,6 +278,7 @@ function normalizeLoadedTask(t) {
   const createdAt =
     typeof t.createdAt === "number" && Number.isFinite(t.createdAt) ? t.createdAt : Date.now();
   const category = typeof t.category === "string" ? t.category : "";
+  const kind = t.kind === "work" ? "work" : "personal";
   return {
     id: t.id,
     title: t.title,
@@ -286,6 +287,7 @@ function normalizeLoadedTask(t) {
     dueDate,
     scheduledDate,
     completedDate,
+    kind,
     category,
     createdAt,
     manualOrder,
@@ -425,6 +427,11 @@ function normalizeCategory(c) {
     .toLowerCase();
 }
 
+/** @param {string} k */
+function normalizeTaskKind(k) {
+  return k === "work" ? "work" : "personal";
+}
+
 /** @param {string} text */
 function parseTaskLines(text) {
   return String(text)
@@ -443,7 +450,8 @@ function taskMatchesSearch(t, q) {
   if (!q) return true;
   const title = String(t.title).toLowerCase();
   const cat = String(t.category || "").toLowerCase();
-  return title.includes(q) || cat.includes(q);
+  const kindLabel = t.kind === "work" ? "work" : "personal";
+  return title.includes(q) || cat.includes(q) || kindLabel.includes(q);
 }
 
 function getThemePref() {
@@ -514,12 +522,14 @@ function mergeTasksPayload(selected) {
   const cats = [...new Set(sorted.map((t) => String(t.category || "").trim()).filter(Boolean))];
   const category = cats.length === 1 ? cats[0] : cats.join(" / ");
   const done = sorted.length > 0 && sorted.every((t) => t.done);
+  const kinds = [...new Set(sorted.map((t) => normalizeTaskKind(t.kind)))];
+  const kind = kinds.length === 1 ? kinds[0] : "personal";
   let completedDate = "";
   if (done && sorted.length > 0) {
     const cds = sorted.map((t) => t.completedDate).filter(Boolean).sort();
     completedDate = cds.length ? cds[cds.length - 1] : todayISODate();
   }
-  return { title, date, dueDate, scheduledDate, category, done, completedDate };
+  return { title, date, dueDate, scheduledDate, category, kind, done, completedDate };
 }
 
 const els = {
@@ -528,6 +538,7 @@ const els = {
   taskDate: /** @type {HTMLInputElement} */ (document.getElementById("task-date")),
   taskDueDate: /** @type {HTMLInputElement} */ (document.getElementById("task-due-date")),
   taskCategory: /** @type {HTMLInputElement} */ (document.getElementById("task-category")),
+  taskKind: /** @type {HTMLSelectElement} */ (document.getElementById("task-kind")),
   taskList: /** @type {HTMLUListElement} */ (document.getElementById("task-list")),
   emptyState: /** @type {HTMLParagraphElement} */ (document.getElementById("empty-state")),
   filters: /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll(".filter")),
@@ -559,6 +570,7 @@ const els = {
   editDate: /** @type {HTMLInputElement} */ (document.getElementById("edit-date")),
   editDueDate: /** @type {HTMLInputElement} */ (document.getElementById("edit-due-date")),
   editCategory: /** @type {HTMLInputElement} */ (document.getElementById("edit-category")),
+  editKind: /** @type {HTMLSelectElement} */ (document.getElementById("edit-kind")),
   editCancel: /** @type {HTMLButtonElement} */ (document.getElementById("edit-cancel")),
   editSave: /** @type {HTMLButtonElement} */ (document.getElementById("edit-save")),
   accountGate: /** @type {HTMLDialogElement} */ (document.getElementById("account-gate")),
@@ -592,7 +604,7 @@ const els = {
 
 /** @type {Task[]} */
 let tasks = [];
-let filter = "all";
+let filter = "active";
 let mergeMode = false;
 let bulkMode = false;
 let projectViewMode = false;
@@ -912,6 +924,9 @@ function createTaskRow(task) {
     cat.textContent = "Project · " + task.category.trim();
     meta.appendChild(cat);
   }
+  const kind = document.createElement("span");
+  kind.textContent = "Type · " + (task.kind === "work" ? "Work" : "Personal");
+  meta.appendChild(kind);
   body.appendChild(meta);
   li.appendChild(body);
 
@@ -1698,6 +1713,7 @@ function applySplitFromDialog() {
   const newTasks = lines.map((title, i) => ({
     id: crypto.randomUUID(),
     title,
+    kind: normalizeTaskKind(source.kind),
     date: creation,
     dueDate: dueRaw,
     scheduledDate: dueRaw || sched,
@@ -1731,6 +1747,7 @@ function openEditDialog(task) {
   els.editDate.value = task.date;
   els.editDueDate.value = task.dueDate || "";
   els.editCategory.value = task.category || "";
+  els.editKind.value = normalizeTaskKind(task.kind);
   els.editDialog.showModal();
   queueMicrotask(() => els.editTitle.focus());
 }
@@ -1788,6 +1805,7 @@ els.editSave.addEventListener("click", () => {
   task.dueDate = dueRaw;
   task.scheduledDate = dueRaw || creation;
   task.category = els.editCategory.value.trim();
+  task.kind = normalizeTaskKind(els.editKind.value);
   saveTasks(tasks);
   editingTaskId = null;
   els.editDialog.close();
@@ -1808,6 +1826,7 @@ els.mergeConfirm.addEventListener("click", () => {
   const replacement = {
     id: crypto.randomUUID(),
     title,
+    kind: normalizeTaskKind(prev.kind),
     date: els.mergeDate.value || prev.date,
     dueDate: dueVal,
     scheduledDate: dueVal || prev.scheduledDate || todayISODate(),
@@ -1828,11 +1847,13 @@ els.addForm.addEventListener("submit", (e) => {
   const creation = els.taskDate.value || todayISODate();
   const dueRaw = els.taskDueDate.value.trim();
   const cat = els.taskCategory.value.trim();
+  const kind = normalizeTaskKind(els.taskKind.value);
   const baseTime = Date.now();
   lines.forEach((title, i) => {
     tasks.push({
       id: crypto.randomUUID(),
       title,
+      kind,
       date: creation,
       dueDate: dueRaw,
       scheduledDate: dueRaw || creation,
@@ -1847,6 +1868,7 @@ els.addForm.addEventListener("submit", (e) => {
   saveTasks(tasks);
   els.taskTitle.value = "";
   els.taskCategory.value = "";
+  els.taskKind.value = "personal";
   const t = todayISODate();
   els.taskDate.value = t;
   els.taskDueDate.value = "";

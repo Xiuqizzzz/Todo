@@ -163,21 +163,25 @@ body {
 }
 
 .add-form input[type="text"],
-.add-row input {
+.add-row input,
+.add-row select {
   width: 100%;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   font: inherit;
   background: var(--bg);
+  color: var(--text);
 }
 
 .add-form textarea#task-title:focus,
 .add-form input[type="text"]:focus,
 .add-row input:focus,
+.add-row select:focus,
 textarea:focus,
 .dialog input:focus,
-.dialog textarea:focus {
+.dialog textarea:focus,
+.dialog select:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: transparent;
@@ -635,7 +639,8 @@ textarea:focus,
 
 .dialog textarea,
 .dialog input[type="text"],
-.dialog input[type="date"] {
+.dialog input[type="date"],
+.dialog select {
   width: 100%;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--border);

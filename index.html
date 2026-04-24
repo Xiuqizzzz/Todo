@@ -74,6 +74,13 @@
                 >Suggestions come from existing tasks; use View by project to browse by name</span
               >
             </label>
+            <label class="field">
+              <span class="field-label">Type</span>
+              <select id="task-kind" name="kind" aria-label="Task type">
+                <option value="personal" selected>Personal</option>
+                <option value="work">Work</option>
+              </select>
+            </label>
           </div>
           <button type="submit" class="btn primary">Add</button>
         </form>
@@ -92,8 +99,8 @@
           />
         </label>
         <div class="filters" role="tablist">
-          <button type="button" class="filter active" data-filter="all">All</button>
-          <button type="button" class="filter" data-filter="active">Active</button>
+          <button type="button" class="filter" data-filter="all">All</button>
+          <button type="button" class="filter active" data-filter="active">Active</button>
           <button type="button" class="filter" data-filter="done">Done</button>
         </div>
         <div class="toolbar-second-row">
@@ -268,6 +275,13 @@
               autocomplete="off"
               placeholder="Pick existing or type new"
             />
+          </label>
+          <label class="field block">
+            <span class="field-label">Type</span>
+            <select id="edit-kind" aria-label="Task type">
+              <option value="personal">Personal</option>
+              <option value="work">Work</option>
+            </select>
           </label>
           <div class="dialog-actions">
             <button type="button" class="btn ghost" id="edit-cancel">Cancel</button>
