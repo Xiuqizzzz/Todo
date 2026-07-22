@@ -86,9 +86,12 @@ function getWindowPosition() {
 function showWindow() {
   const pos = getWindowPosition();
   win.setPosition(pos.x, pos.y, false);
-  // Pull the latest remote UI on open (cache-revalidated, so it's a fast 304
-  // when unchanged). Local data in localStorage is untouched by a reload.
-  if (USE_REMOTE && loadedRemoteOnce) win.webContents.reload();
+  // Pull the latest remote UI on open. Use a hard reload (ignore cache) so the
+  // HTML and its scripts are always fetched as a consistent set — a normal
+  // reload can serve a stale cached sticker.js against fresh HTML (GitHub Pages
+  // caches assets ~10 min), which silently breaks event wiring. Local data in
+  // localStorage is untouched by a reload.
+  if (USE_REMOTE && loadedRemoteOnce) win.webContents.reloadIgnoringCache();
   win.show();
   win.focus();
 }
