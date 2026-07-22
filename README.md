@@ -1,69 +1,56 @@
-# Todo
+# Todo — macOS menu-bar sticker
 
-A small, static web app for personal tasks: due dates, optional rolling “no deadline” scheduling, a calendar, merge mode, and project grouping.
+A tiny Todo that lives in the macOS **menu bar**. Click the menu-bar icon to pop
+up a compact sticker: add tasks (type + Enter), optionally group them and set
+start / due dates, and switch between **List / Board / Calendar** views. No Dock
+icon, no window chrome. Data stays local to each machine.
 
-There is **no build step**. Open `index.html` in a browser or serve the folder with any static host.
+The app is an Electron shell that **loads its UI from GitHub Pages**, so content
+updates ship without re-distributing the app — see below.
 
-## Features (recent)
+## Install (team members)
 
-- **Search** — filter the list by task title or project name (works with All / Active / Done).
-- **Coming up** — summary of open tasks **due or scheduled** for **today** and **tomorrow**.
-- **Multi-line add** — the task field is a short text area: **one line = one task** (same dates & project). Paste a list to create many tasks at once.
-- **Split** — on any task, **Split** opens a dialog to turn one item into several subtasks (copies dates/project; original removed). You can also **split on `;` or `；`** inside the dialog.
-- **Theme** — **Theme** cycles **Auto** (follows system light/dark), **Light**, and **Dark**; choice is saved in `localStorage`.
-- **Dialogs** — edit/merge/PIN dialogs focus the main field when opened.
+1. Open the DMG and drag **Todo** into **Applications**.
+2. First launch: because the app is unsigned, right-click **Todo.app → Open →
+   Open** (or System Settings → Privacy & Security → **Open Anyway**). If it says
+   *"damaged"*, run once: `xattr -dr com.apple.quarantine /Applications/Todo.app`.
 
-## Run locally
+The icon appears in the top menu bar. Click to toggle; right-click for **Quit**.
 
-From the project root:
+## Develop & build
+
+Everything lives in [`desktop/`](desktop/). See [desktop/README.md](desktop/README.md)
+for details.
 
 ```bash
-open index.html
+cd desktop
+npm install
+npm start        # run locally (loads the local renderer/ files)
+npm run dist     # build the universal DMG → desktop/release/
 ```
 
-Or use a static server (helps some browsers with `localStorage` and `file://`):
+## How updates work (no re-packaging)
 
-```bash
-npx --yes serve .
+The packaged app loads its UI from GitHub Pages:
+
+```
+https://xiuqizzzz.github.io/Todo/desktop/renderer/sticker.html
 ```
 
-Then open the URL it prints (often `http://localhost:3000`).
+- Edit files in `desktop/renderer/`, push to `main` → users get the new UI the
+  next time they open the sticker. No rebuild, no re-install.
+- If the app can't reach the network, it falls back to the copy bundled inside
+  the DMG, so it always opens offline.
+- During local development (`npm start`) the app loads the local files instead,
+  for fast iteration.
 
-## Accounts (profiles)
+### One-time GitHub Pages setup
 
-The app stores data in **your browser** under `localStorage`, in **`todo-app-v2`**.
+Repo **Settings → Pages → Build and deployment**: Source = **Deploy from a
+branch**, Branch = `main`, folder = `/ (root)`. Save. After a minute the
+`desktop/renderer/` files are served at the URL above.
 
-- **Profiles** let multiple people (or roles) use the same installation on one device, each with their own task list.
-- An optional **PIN** is stored only as a **SHA-256 hash** in that storage. It is **not** sent to any server.
-- After a successful PIN unlock, this **tab** remembers the unlock for the session via `sessionStorage`. Closing the tab or browser asks for the PIN again (if set).
+## Data & privacy
 
-If you had data from an older version (key `todo-simple-v1`), the first load **migrates** it into a profile named **Default** with no PIN.
-
-### Hosting it “publicly”
-
-You can deploy these files to **GitHub Pages**, **Netlify**, **Cloudflare Pages**, or any static host so anyone can open the URL.
-
-Important:
-
-- Each visitor’s data stays **in their own browser**. There is **no shared cloud database** in this repo.
-- PINs and tasks are **not** secure against someone with access to the machine or dev tools; they’re for light separation only.
-- For **real multi-user accounts** (login anywhere, shared backup), you’d add a backend or a service (e.g. Supabase, Firebase, or your own API) and sync tasks there. This README does not configure that for you.
-
-## Deploy example (GitHub Pages)
-
-1. Push this repo to GitHub.
-2. Repository **Settings → Pages**.
-3. **Build and deployment**: Source = **Deploy from a branch**, Branch = `main` (or `master`) and folder `/ (root)`.
-4. Save; after a minute, the site URL appears on the same page.
-
-## Files
-
-| File          | Role                                      |
-| ------------- | ----------------------------------------- |
-| `index.html`  | Structure, dialogs, calendar shell        |
-| `styles.css`  | Layout and theme                          |
-| `app.js`      | Tasks, storage, accounts, calendar logic  |
-
-## License
-
-Use and change freely for personal use; add a license file if you publish as a project others should fork under clear terms.
+Tasks are stored in the app's local storage on each machine. There is no shared
+backend and nothing is uploaded. Each person keeps their own list.

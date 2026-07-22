@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+    <title>Todo</title>
+    <link rel="stylesheet" href="sticker.css" />
+  </head>
+  <body>
+    <div class="sticker">
+      <header class="bar" id="drag-bar">
+        <span class="dot" aria-hidden="true"></span>
+        <h1 class="title">Todo</h1>
+        <span class="count" id="count"></span>
+        <button type="button" class="icon-btn" id="quit-btn" title="Quit" aria-label="Quit">✕</button>
+      </header>
+
+      <nav class="views" id="views" aria-label="View">
+        <button type="button" class="view-tab active" data-view="list">List</button>
+        <button type="button" class="view-tab" data-view="board">Board</button>
+        <button type="button" class="view-tab" data-view="calendar">Calendar</button>
+      </nav>
+
+      <form id="add-form" class="add">
+        <input
+          type="text"
+          id="new-task"
+          class="new-task"
+          placeholder="Add a task…  ⏎"
+          autocomplete="off"
+          maxlength="500"
+        />
+        <div class="add-details">
+          <input
+            type="text"
+            id="new-group"
+            class="mini-input grow"
+            list="group-list"
+            placeholder="Group (optional)"
+            autocomplete="off"
+            maxlength="80"
+          />
+          <label class="mini-date" title="Due date">
+            <span class="mini-date-icon">◇</span>
+            <input type="date" id="new-due" class="date-input" aria-label="Due date" />
+          </label>
+          <button type="button" id="toggle-start" class="mini-btn" aria-pressed="false" title="Add a start date">+ start</button>
+          <label class="mini-date hidden" id="start-wrap" title="Start date">
+            <span class="mini-date-icon">▷</span>
+            <input type="date" id="new-start" class="date-input" aria-label="Start date" />
+          </label>
+        </div>
+        <datalist id="group-list"></datalist>
+      </form>
+
+      <!-- LIST VIEW -->
+      <section id="view-list" class="view-panel">
+        <div class="filters">
+          <button type="button" class="chip active" data-filter="active">Active</button>
+          <button type="button" class="chip" data-filter="all">All</button>
+          <button type="button" class="chip" data-filter="done">Done</button>
+        </div>
+        <ul id="list" class="list" aria-label="Tasks"></ul>
+        <p id="empty" class="empty hidden">Nothing here yet.</p>
+      </section>
+
+      <!-- BOARD VIEW -->
+      <section id="view-board" class="view-panel hidden">
+        <div id="board" class="board" aria-label="Board grouped by group"></div>
+      </section>
+
+      <!-- CALENDAR VIEW -->
+      <section id="view-calendar" class="view-panel hidden">
+        <div class="cal-nav">
+          <button type="button" id="cal-prev" class="icon-btn" aria-label="Previous month">‹</button>
+          <span id="cal-label" class="cal-label"></span>
+          <button type="button" id="cal-next" class="icon-btn" aria-label="Next month">›</button>
+        </div>
+        <div class="cal-weekdays" aria-hidden="true">
+          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+        </div>
+        <div id="cal-grid" class="cal-grid" role="grid"></div>
+        <div id="cal-detail" class="cal-detail">
+          <p class="cal-detail-title" id="cal-detail-title">Pick a day</p>
+          <ul id="cal-detail-list" class="cal-detail-list"></ul>
+        </div>
+      </section>
+
+      <!-- EDIT OVERLAY -->
+      <div id="edit-overlay" class="overlay hidden">
+        <div class="edit-card">
+          <textarea id="edit-title" class="edit-title" rows="2" maxlength="500"></textarea>
+          <input
+            type="text"
+            id="edit-group"
+            class="mini-input"
+            list="group-list"
+            placeholder="Group (optional)"
+            autocomplete="off"
+            maxlength="80"
+          />
+          <div class="edit-dates">
+            <label class="edit-date">
+              <span>Start</span>
+              <input type="date" id="edit-start" />
+            </label>
+            <label class="edit-date">
+              <span>Due</span>
+              <input type="date" id="edit-due" />
+            </label>
+          </div>
+          <div class="edit-actions">
+            <button type="button" id="edit-delete" class="btn-text danger">Delete</button>
+            <span class="spacer"></span>
+            <button type="button" id="edit-cancel" class="btn-text">Cancel</button>
+            <button type="button" id="edit-save" class="btn-text primary">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="sticker.js"></script>
+  </body>
+</html>

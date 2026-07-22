@@ -1,0 +1,54 @@
+{
+  "name": "todo-sticker",
+  "version": "1.2.0",
+  "description": "A tiny menu-bar Todo sticker for macOS",
+  "main": "electron-main.js",
+  "author": "Todo Team",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac dmg --universal",
+    "dist:arm64": "electron-builder --mac dmg --arm64"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.todo.sticker",
+    "productName": "Todo",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "electron-main.js",
+      "preload.js",
+      "renderer/**/*",
+      "build/trayTemplate.png",
+      "build/trayTemplate@2x.png"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "identity": null,
+      "extendInfo": {
+        "LSUIElement": 1
+      }
+    },
+    "dmg": {
+      "title": "Todo ${version}"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
