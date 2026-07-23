@@ -1,6 +1,6 @@
 {
   "name": "todo-sticker",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "A tiny menu-bar Todo sticker for macOS",
   "main": "electron-main.js",
   "author": "Todo Team",

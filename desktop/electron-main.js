@@ -69,6 +69,11 @@ function createWindow() {
     },
   });
 
+  // Show on whichever Space/Desktop is currently active (and over full-screen
+  // apps) instead of yanking the user back to the Space the window first
+  // appeared on.
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
   loadUI();
 
   // If the remote load fails (offline / Pages down), fall back to the copy
