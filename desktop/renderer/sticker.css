@@ -432,6 +432,12 @@ body {
   font-weight: 600;
   border-bottom: 1px solid var(--line);
 }
+.column-head.clickable {
+  cursor: pointer;
+}
+.column-head.clickable:hover {
+  background: var(--panel-2);
+}
 .column-head .col-dot {
   width: 8px;
   height: 8px;
@@ -730,6 +736,110 @@ body {
 .btn-text.danger:hover {
   background: var(--danger);
   color: #fff;
+}
+
+/* ---- group color / emoji picker ---- */
+.edit-group-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.group-style-btn {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 0 8px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.group-style-btn:hover {
+  border-color: var(--muted);
+}
+.gs-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.gs-emoji {
+  font-size: 13px;
+}
+.gs-emoji:empty {
+  display: none;
+}
+.gs-caret {
+  font-size: 9px;
+}
+.gp-card {
+  gap: 6px;
+}
+.gp-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.gp-title #gp-name {
+  color: var(--brand);
+}
+.gp-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.gp-swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.swatch {
+  -webkit-app-region: no-drag;
+  aspect-ratio: 1 / 1;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+.swatch.selected {
+  border-color: var(--text);
+}
+.gp-emoji-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.gp-emoji-quick {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.emoji-btn {
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.emoji-btn:hover {
+  border-color: var(--brand);
+}
+.emoji-btn.selected {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.gp-emoji-row .mini-input {
+  width: 90px;
 }
 
 /* scrollbars */

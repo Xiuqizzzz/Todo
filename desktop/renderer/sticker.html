@@ -106,15 +106,27 @@
       <div id="edit-overlay" class="overlay hidden">
         <div class="edit-card">
           <textarea id="edit-title" class="edit-title" rows="2" maxlength="500"></textarea>
-          <input
-            type="text"
-            id="edit-group"
-            class="mini-input"
-            list="group-list"
-            placeholder="Group (optional)"
-            autocomplete="off"
-            maxlength="80"
-          />
+          <div class="edit-group-row">
+            <input
+              type="text"
+              id="edit-group"
+              class="mini-input grow"
+              list="group-list"
+              placeholder="Group (optional)"
+              autocomplete="off"
+              maxlength="80"
+            />
+            <button
+              type="button"
+              id="edit-group-style"
+              class="group-style-btn"
+              title="Choose this group's color & emoji"
+            >
+              <span class="gs-swatch" id="edit-group-swatch"></span>
+              <span class="gs-emoji" id="edit-group-emoji"></span>
+              <span class="gs-caret">▾</span>
+            </button>
+          </div>
           <div class="edit-dates">
             <label class="edit-date">
               <span>Start</span>
@@ -130,6 +142,32 @@
             <span class="spacer"></span>
             <button type="button" id="edit-cancel" class="btn-text">Cancel</button>
             <button type="button" id="edit-save" class="btn-text primary">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- GROUP COLOR / EMOJI PICKER -->
+      <div id="group-picker" class="overlay hidden">
+        <div class="edit-card gp-card">
+          <p class="gp-title">Group <span id="gp-name"></span></p>
+          <p class="gp-label">Color</p>
+          <div id="gp-swatches" class="gp-swatches"></div>
+          <p class="gp-label">Emoji</p>
+          <div class="gp-emoji-row">
+            <div id="gp-emoji-quick" class="gp-emoji-quick"></div>
+            <input
+              type="text"
+              id="gp-emoji-input"
+              class="mini-input"
+              placeholder="type / paste"
+              autocomplete="off"
+              maxlength="8"
+            />
+            <button type="button" id="gp-emoji-clear" class="btn-text" title="No emoji">clear</button>
+          </div>
+          <div class="edit-actions">
+            <span class="spacer"></span>
+            <button type="button" id="gp-done" class="btn-text primary">Done</button>
           </div>
         </div>
       </div>
