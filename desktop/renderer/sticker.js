@@ -256,6 +256,8 @@ const els = {
   gpOverlay: $("group-picker"),
   gpName: $("gp-name"),
   gpSwatches: $("gp-swatches"),
+  gpColorInput: $("gp-color-input"),
+  gpColorHex: $("gp-color-hex"),
   gpEmojiQuick: $("gp-emoji-quick"),
   gpEmojiInput: $("gp-emoji-input"),
   gpEmojiClear: $("gp-emoji-clear"),
@@ -673,49 +675,71 @@ function afterGroupStyleChange() {
   refreshEditGroupStyle();
   render(); // tags/columns update live behind the picker
 }
+// Update selection highlights + inputs to match the current stored style,
+// without rebuilding the picker (so the native color dialog stays open).
+function markGroupPickerState() {
+  if (!pickingGroup) return;
+  const cur = getGroupColor(pickingGroup).toLowerCase();
+  els.gpSwatches
+    .querySelectorAll(".swatch")
+    .forEach((b) => b.classList.toggle("selected", b.dataset.color === cur));
+  els.gpColorInput.value = cur;
+  els.gpColorHex.textContent = cur;
+  const curEmoji = getGroupEmoji(pickingGroup);
+  els.gpEmojiQuick
+    .querySelectorAll(".emoji-btn")
+    .forEach((b) => b.classList.toggle("selected", b.textContent === curEmoji));
+  els.gpEmojiInput.value = curEmoji;
+}
 function openGroupPicker(name) {
   name = (name || "").trim();
   if (!name) return;
   pickingGroup = name;
   els.gpName.textContent = name;
 
-  const cur = getGroupColor(name).toLowerCase();
   els.gpSwatches.innerHTML = "";
   for (const c of PALETTE) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "swatch" + (c.toLowerCase() === cur ? " selected" : "");
+    b.className = "swatch";
+    b.dataset.color = c.toLowerCase();
     b.style.background = c;
     b.addEventListener("click", () => {
       setGroupColor(name, c);
-      openGroupPicker(name);
+      markGroupPickerState();
       afterGroupStyleChange();
     });
     els.gpSwatches.appendChild(b);
   }
 
-  const curEmoji = getGroupEmoji(name);
   els.gpEmojiQuick.innerHTML = "";
   for (const e of QUICK_EMOJI) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "emoji-btn" + (e === curEmoji ? " selected" : "");
+    b.className = "emoji-btn";
     b.textContent = e;
     b.addEventListener("click", () => {
       setGroupEmoji(name, e);
-      els.gpEmojiInput.value = e;
-      openGroupPicker(name);
+      markGroupPickerState();
       afterGroupStyleChange();
     });
     els.gpEmojiQuick.appendChild(b);
   }
-  els.gpEmojiInput.value = curEmoji;
+
+  markGroupPickerState();
   els.gpOverlay.classList.remove("hidden");
 }
 function closeGroupPicker() {
   pickingGroup = null;
   els.gpOverlay.classList.add("hidden");
 }
+// Full color wheel (native picker) — any color, not just the presets.
+els.gpColorInput.addEventListener("input", () => {
+  if (!pickingGroup) return;
+  setGroupColor(pickingGroup, els.gpColorInput.value.toLowerCase());
+  markGroupPickerState();
+  afterGroupStyleChange();
+});
 els.gpEmojiInput.addEventListener("input", () => {
   if (!pickingGroup) return;
   const v = normalizeEmoji(els.gpEmojiInput.value);

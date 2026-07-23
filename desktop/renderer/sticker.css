@@ -808,6 +808,62 @@ body {
 .swatch.selected {
   border-color: var(--text);
 }
+.gp-custom {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.gp-custom:hover {
+  border-color: var(--muted);
+}
+.gp-custom-swatch {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex: none;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+  /* rainbow hint that this opens a full picker */
+  background: conic-gradient(
+    from 0deg,
+    #f00,
+    #ff0,
+    #0f0,
+    #0ff,
+    #00f,
+    #f0f,
+    #f00
+  );
+  overflow: hidden;
+}
+/* The native color input fills the swatch but stays invisible (click-through). */
+.color-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.gp-custom-label {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+}
+.gp-custom-hex {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
 .gp-emoji-row {
   display: flex;
   align-items: center;
