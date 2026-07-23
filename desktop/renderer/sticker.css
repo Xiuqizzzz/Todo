@@ -160,9 +160,14 @@ body {
 }
 .add-details {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin-top: 6px;
+}
+/* Group field keeps a usable width; the date controls wrap below it if tight. */
+.add-details .mini-input.grow {
+  flex: 1 0 100%;
 }
 .mini-input {
   -webkit-app-region: no-drag;
@@ -221,8 +226,31 @@ body {
   color: var(--text);
   border-color: var(--muted);
 }
-.mini-btn[aria-pressed="true"] {
+/* The "+ start" button hides itself once pressed (its date field takes over). */
+#toggle-start[aria-pressed="true"] {
   display: none;
+}
+/* Quick "Today" deadline toggle — a sticky default so you don't set ddl each time. */
+.today-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-style: solid;
+}
+.today-toggle .tick {
+  font-size: 10px;
+  opacity: 0.35;
+}
+.today-toggle[aria-pressed="true"] {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.today-toggle[aria-pressed="true"]:hover {
+  color: var(--brand);
+}
+.today-toggle[aria-pressed="true"] .tick {
+  opacity: 1;
 }
 
 /* ---- view panels ---- */
