@@ -80,11 +80,18 @@
           <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
         </div>
         <div id="cal-grid" class="cal-grid" role="grid"></div>
-        <div id="cal-detail" class="cal-detail">
-          <p class="cal-detail-title" id="cal-detail-title">Pick a day</p>
-          <ul id="cal-detail-list" class="cal-detail-list"></ul>
-        </div>
+        <p class="cal-legend">
+          <span class="cal-legend-dot due"></span> due
+          <span class="cal-legend-dot overdue"></span> overdue
+          <span class="cal-legend-dot start"></span> start
+        </p>
       </section>
+
+      <!-- Hover/click popover showing a day's tasks (calendar view) -->
+      <div id="cal-popover" class="cal-popover hidden">
+        <p class="cal-popover-title" id="cal-popover-title"></p>
+        <ul id="cal-popover-list" class="cal-popover-list"></ul>
+      </div>
 
       <!-- EDIT OVERLAY -->
       <div id="edit-overlay" class="overlay hidden">
