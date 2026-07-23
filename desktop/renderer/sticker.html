@@ -8,6 +8,7 @@
   </head>
   <body>
     <div class="sticker">
+      <div id="toast" class="toast hidden"></div>
       <header class="bar" id="drag-bar">
         <span class="dot" aria-hidden="true"></span>
         <h1 class="title">Todo</h1>
@@ -137,6 +138,11 @@
               <input type="date" id="edit-due" />
             </label>
           </div>
+          <label class="edit-repeat" title="Repeat this task on a fixed interval">
+            <span>🔁 Repeat every</span>
+            <input type="number" id="edit-repeat" min="0" max="365" step="1" placeholder="0" />
+            <span>days</span>
+          </label>
           <div class="edit-actions">
             <button type="button" id="edit-delete" class="btn-text danger">Delete</button>
             <span class="spacer"></span>

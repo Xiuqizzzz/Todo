@@ -140,6 +140,13 @@ def make_tray_template(size):
     return layer.resize((size, size), Image.LANCZOS)
 
 
+def make_tray_alert(size):
+    """Amber checkmark (non-template) shown in the menu bar when tasks are overdue."""
+    s = size * 4
+    layer = draw_check_layer(s, (245, 158, 11, 255), width_ratio=0.13)  # amber #f59e0b
+    return layer.resize((size, size), Image.LANCZOS)
+
+
 def main():
     os.makedirs(ICONSET, exist_ok=True)
     specs = [
@@ -159,7 +166,9 @@ def main():
 
     make_tray_template(16).save(os.path.join(HERE, "trayTemplate.png"))
     make_tray_template(32).save(os.path.join(HERE, "trayTemplate@2x.png"))
-    print("wrote tray template images")
+    make_tray_alert(16).save(os.path.join(HERE, "trayAlert.png"))
+    make_tray_alert(32).save(os.path.join(HERE, "trayAlert@2x.png"))
+    print("wrote tray template + alert images")
 
 
 if __name__ == "__main__":

@@ -172,9 +172,43 @@ function addTask(title, opts) {
     createdAt: now,
     manualOrder: minOrder - 1,
     deletedAt: null,
+    repeatDays: 0,
   });
   ensureGroupColor(opts.category);
   save();
+}
+// When a repeating task is completed, spawn its next occurrence (dates advanced
+// by repeatDays), like a recurring calendar event.
+function shiftISO(iso, days) {
+  const d = parseISO(iso);
+  if (!d) return iso;
+  d.setDate(d.getDate() + days);
+  return toISO(d);
+}
+function spawnNextOccurrence(t) {
+  const n = t.repeatDays;
+  if (!(n > 0)) return;
+  let due = t.dueDate ? shiftISO(t.dueDate, n) : "";
+  let start = t.startDate ? shiftISO(t.startDate, n) : "";
+  if (!due && !start) due = shiftISO(todayISO(), n);
+  const tasks = profile().tasks;
+  const minOrder = tasks.reduce((m, x) => Math.min(m, x.manualOrder ?? 0), 0);
+  tasks.push({
+    id: newId(),
+    title: t.title,
+    kind: t.kind || "personal",
+    done: false,
+    date: todayISO(),
+    dueDate: due,
+    startDate: start,
+    scheduledDate: start || due || todayISO(),
+    completedDate: "",
+    category: t.category || "",
+    createdAt: Date.now(),
+    manualOrder: minOrder - 1,
+    deletedAt: null,
+    repeatDays: n,
+  });
 }
 function findTask(id) {
   return profile().tasks.find((t) => t.id === id);
@@ -184,6 +218,7 @@ function toggleDone(id) {
   if (!t) return;
   t.done = !t.done;
   t.completedDate = t.done ? todayISO() : "";
+  if (t.done && t.repeatDays > 0) spawnNextOccurrence(t);
   save();
 }
 function removeTask(id) {
@@ -250,6 +285,8 @@ const els = {
   editSave: $("edit-save"),
   editCancel: $("edit-cancel"),
   editDelete: $("edit-delete"),
+  editRepeat: $("edit-repeat"),
+  toast: $("toast"),
   editGroupStyle: $("edit-group-style"),
   editGroupSwatch: $("edit-group-swatch"),
   editGroupEmoji: $("edit-group-emoji"),
@@ -623,6 +660,7 @@ function openEdit(id) {
   els.editGroup.value = t.category || "";
   els.editStart.value = t.startDate || "";
   els.editDue.value = t.dueDate || "";
+  els.editRepeat.value = t.repeatDays > 0 ? String(t.repeatDays) : "";
   refreshEditGroupStyle();
   els.overlay.classList.remove("hidden");
   els.editTitle.focus();
@@ -635,11 +673,14 @@ els.editSave.addEventListener("click", () => {
   if (!editingId) return;
   const title = els.editTitle.value.trim();
   if (!title) return;
+  let repeatDays = parseInt(els.editRepeat.value, 10);
+  if (!Number.isFinite(repeatDays) || repeatDays < 0) repeatDays = 0;
   updateTask(editingId, {
     title,
     category: els.editGroup.value.trim(),
     startDate: els.editStart.value,
     dueDate: els.editDue.value,
+    repeatDays,
   });
   closeEdit();
   render();
@@ -876,6 +917,68 @@ window.addEventListener("focus", () => {
   if (view === "list") els.input.focus();
 });
 
+// ---- menu-bar badge, notifications, celebration ----
+// Tasks that "need attention today" = open tasks due today or overdue.
+function attentionCounts() {
+  const today = todayISO();
+  let due = 0;
+  let overdue = 0;
+  for (const t of activeTasks()) {
+    if (t.done || !t.dueDate) continue;
+    if (t.dueDate < today) overdue++;
+    else if (t.dueDate === today) due++;
+  }
+  return { due, overdue, total: due + overdue };
+}
+function pushBadge() {
+  if (!(window.sticker && window.sticker.setBadge)) return;
+  const c = attentionCounts();
+  window.sticker.setBadge({ count: c.total, overdue: c.overdue });
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  els.toast.textContent = msg;
+  els.toast.classList.remove("hidden");
+  // force reflow so the transition runs even on rapid re-shows
+  void els.toast.offsetWidth;
+  els.toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    els.toast.classList.remove("show");
+    setTimeout(() => els.toast.classList.add("hidden"), 250);
+  }, 2400);
+}
+let prevAttentionTotal = null;
+function maybeCelebrate(total) {
+  if (prevAttentionTotal !== null && prevAttentionTotal > 0 && total === 0) {
+    showToast("All done for today 🎉");
+  }
+  prevAttentionTotal = total;
+}
+
+let notifyEnabled = true;
+function checkNotifications() {
+  if (!notifyEnabled) return;
+  if (!(window.sticker && window.sticker.notify)) return;
+  const today = todayISO();
+  let notified = {};
+  try {
+    notified = JSON.parse(localStorage.getItem("todo-notified") || "{}");
+  } catch (_) {}
+  let changed = false;
+  for (const t of activeTasks()) {
+    if (t.done || t.dueDate !== today) continue;
+    if (notified[t.id] === today) continue;
+    window.sticker.notify("Due today", t.title + (t.category ? " · " + t.category : ""));
+    notified[t.id] = today;
+    changed = true;
+  }
+  // prune entries not from today to keep it small
+  for (const id in notified) if (notified[id] !== today) delete notified[id];
+  if (changed) localStorage.setItem("todo-notified", JSON.stringify(notified));
+}
+
 // ---- master render ----
 function render() {
   // group suggestions
@@ -892,8 +995,34 @@ function render() {
   if (view === "list") renderList();
   else if (view === "board") renderBoard();
   else if (view === "calendar") renderCalendar();
+
+  const att = attentionCounts();
+  pushBadge();
+  maybeCelebrate(att.total);
 }
+
+// Init: prefs, notifications, and a slow heartbeat (also handles midnight
+// rollover of "due today" for the badge/notifications while the app stays open).
+if (window.sticker && window.sticker.getPrefs) {
+  window.sticker
+    .getPrefs()
+    .then((p) => {
+      notifyEnabled = !!(p && p.notify);
+      checkNotifications();
+    })
+    .catch(() => {});
+}
+if (window.sticker && window.sticker.onNotifyPref) {
+  window.sticker.onNotifyPref((v) => {
+    notifyEnabled = !!v;
+  });
+}
+setInterval(() => {
+  pushBadge();
+  checkNotifications();
+}, 60000);
 
 migrateGroupColors();
 render();
+setTimeout(checkNotifications, 1500);
 els.input.focus();

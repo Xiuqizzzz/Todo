@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, Notification } = require("electron");
 const path = require("path");
+const fs = require("fs");
 
 const WIN_WIDTH = 340;
 const WIN_HEIGHT = 480;
@@ -15,6 +16,24 @@ const USE_REMOTE = app.isPackaged && !!REMOTE_URL;
 let tray = null;
 let win = null;
 let loadedRemoteOnce = false;
+let baseTrayIcon = null;
+let alertTrayIcon = null;
+
+// ---- prefs (small JSON in userData) ----
+const PREFS_PATH = path.join(app.getPath("userData"), "prefs.json");
+let prefs = { notify: true, loginConfigured: false };
+function loadPrefs() {
+  try {
+    prefs = Object.assign(prefs, JSON.parse(fs.readFileSync(PREFS_PATH, "utf-8")));
+  } catch (_) {
+    /* first run — keep defaults */
+  }
+}
+function savePrefs() {
+  try {
+    fs.writeFileSync(PREFS_PATH, JSON.stringify(prefs));
+  } catch (_) {}
+}
 
 function loadLocal() {
   win.loadFile(path.join(__dirname, "renderer", "sticker.html"));
@@ -105,21 +124,51 @@ function toggleWindow() {
   }
 }
 
+function buildTrayMenu() {
+  const openAtLogin = app.getLoginItemSettings().openAtLogin;
+  return Menu.buildFromTemplate([
+    { label: "Open Todo", click: () => showWindow() },
+    { type: "separator" },
+    {
+      label: "Open at Login",
+      type: "checkbox",
+      checked: openAtLogin,
+      click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+    },
+    {
+      label: "Due-date Notifications",
+      type: "checkbox",
+      checked: prefs.notify,
+      click: (item) => {
+        prefs.notify = item.checked;
+        savePrefs();
+        if (win) win.webContents.send("notif-pref", prefs.notify);
+      },
+    },
+    { type: "separator" },
+    { label: "Quit Todo", click: () => app.quit() },
+  ]);
+}
+
 function createTray() {
-  const icon = nativeImage.createFromPath(path.join(__dirname, "build", "trayTemplate.png"));
-  icon.setTemplateImage(true);
-  tray = new Tray(icon);
+  baseTrayIcon = nativeImage.createFromPath(path.join(__dirname, "build", "trayTemplate.png"));
+  baseTrayIcon.setTemplateImage(true);
+  alertTrayIcon = nativeImage.createFromPath(path.join(__dirname, "build", "trayAlert.png"));
+  tray = new Tray(baseTrayIcon);
   tray.setToolTip("Todo");
 
   tray.on("click", () => toggleWindow());
-  tray.on("right-click", () => {
-    const menu = Menu.buildFromTemplate([
-      { label: "Open Todo", click: () => showWindow() },
-      { type: "separator" },
-      { label: "Quit Todo", click: () => app.quit() },
-    ]);
-    tray.popUpContextMenu(menu);
-  });
+  tray.on("right-click", () => tray.popUpContextMenu(buildTrayMenu()));
+}
+
+// Show the count of tasks needing attention (due today + overdue) next to the
+// menu-bar icon, and switch to the amber icon when something is overdue.
+function updateTray(info) {
+  if (!tray) return;
+  const count = info && info.count ? info.count : 0;
+  const overdue = info && info.overdue ? info.overdue : 0;
+  tray.setTitle(count ? " " + count : "");
+  tray.setImage(overdue > 0 ? alertTrayIcon : baseTrayIcon);
 }
 
 // Menu-bar-only app: no Dock icon.
@@ -131,6 +180,15 @@ if (!gotLock) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    loadPrefs();
+    // On first run of the packaged app, make it open at login (it's a menu-bar
+    // sticker — it should just be there). Skipped in dev so `npm start` never
+    // registers a login item. The user can turn this off from the tray menu.
+    if (app.isPackaged && !prefs.loginConfigured) {
+      app.setLoginItemSettings({ openAtLogin: true });
+      prefs.loginConfigured = true;
+      savePrefs();
+    }
     createWindow();
     createTray();
   });
@@ -153,3 +211,15 @@ ipcMain.on("set-size", (e, size) => {
   const pos = getWindowPosition();
   win.setPosition(pos.x, pos.y, false);
 });
+
+// Menu-bar badge (count + overdue state), pushed by the renderer.
+ipcMain.on("set-badge", (e, info) => updateTray(info));
+
+// Native macOS notification for a due task (gated by the pref).
+ipcMain.on("notify", (e, msg) => {
+  if (!prefs.notify || !msg) return;
+  if (!Notification.isSupported()) return;
+  new Notification({ title: msg.title || "Todo", body: msg.body || "" }).show();
+});
+
+ipcMain.handle("get-prefs", () => ({ notify: prefs.notify }));

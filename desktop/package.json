@@ -1,6 +1,6 @@
 {
   "name": "todo-sticker",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "A tiny menu-bar Todo sticker for macOS",
   "main": "electron-main.js",
   "author": "Todo Team",
@@ -26,7 +26,9 @@
       "preload.js",
       "renderer/**/*",
       "build/trayTemplate.png",
-      "build/trayTemplate@2x.png"
+      "build/trayTemplate@2x.png",
+      "build/trayAlert.png",
+      "build/trayAlert@2x.png"
     ],
     "mac": {
       "target": [
